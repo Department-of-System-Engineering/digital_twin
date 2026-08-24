@@ -1,4 +1,6 @@
-﻿import asyncio
+﻿from config_log import setup_logging
+
+import asyncio
 import time
 from datetime import datetime
 
@@ -13,11 +15,10 @@ from .schemas import (AssetFailureCausePredictionPayload, AssetPredictionPayload
 from .cmms import (cmms_post_asset_failure_cause_prediction, cmms_post_asset_prediction)
 from .job_queue import (_is_admin_shutdown_error, claim_one_job, job_heartbeat, requeue_stuck_jobs, session_scope)
 
-# !Dummy predikció cmms-dt kapcsolat teszteléséhez
+# !!Dummy predikció cmms-dt kapcsolat teszteléséhez
 # from .test_predict import predict
 
-# ! Predikciós modul importálása
-from config_log import setup_logging
+# !!Predikciós modul importálása
 from .prediction_config import prediction_config
 from prediction_module.core import run_prediction
 

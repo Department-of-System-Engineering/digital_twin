@@ -80,6 +80,7 @@ services:
     volumes:
       - prediction_data:/data/predictions
       - ./config/prediction.toml:/app/config/prediction.toml:ro
+      - ./host_dt_logs:./logs # A gazdaszerver (host) mappájának összerendelése a konténer log mappájával. Szintaxis: <host_könyvtár>:<konténer_könyvtár>
     depends_on:
       db-init:
         condition: service_completed_successfully
