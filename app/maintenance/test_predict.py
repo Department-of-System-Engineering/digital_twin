@@ -115,10 +115,7 @@ def predict(
 
             nowcast_reliability = 0.95
             final_reliability = 0.80
-            nowcast_failure_type_probability = (
-                (1.0 - nowcast_reliability)
-                / len(failure_type_ids)
-            )
+            nowcast_failure_type_probability = ((1.0 - nowcast_reliability) / len(failure_type_ids))
 
             for index, forecast_time in enumerate(forecast_times, start=1):
                 progress = index / number_of_steps
@@ -131,10 +128,7 @@ def predict(
                                                  nowcast_reliability=(nowcast_reliability), forecast_reliability=(forecast_reliability),
                                                  nowcast_virtual_age=0.0, forecast_virtual_age=(float(elapsed_seconds)), nowcast_time=(nowcast_time.to_pydatetime())))
 
-                forecast_failure_type_probability = (
-                    (1.0 - forecast_reliability)
-                    / len(failure_type_ids)
-                )
+                forecast_failure_type_probability = ((1.0 - forecast_reliability) / len(failure_type_ids))
 
                 for failure_type_prediction in failure_type_predictions:
                     session.add(

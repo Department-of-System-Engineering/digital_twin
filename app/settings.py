@@ -67,9 +67,7 @@ class Settings(BaseSettings):
 
         if missing:
             raise ValueError(
-                "Set DATABASE_URL/ASYNC_DATABASE_URL or provide: "
-                + ", ".join(missing)
-            )
+                "Set DATABASE_URL/ASYNC_DATABASE_URL or provide: " + ", ".join(missing))
 
         assert self.POSTGRES_PASSWORD is not None
 
