@@ -8,8 +8,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY requirements.txt ./
+COPY --from=prediction_module_src / /tmp/pundit-prediction-module
+
 RUN python -m pip install --upgrade pip \
-    && python -m pip install -r requirements.txt
+    && python -m pip install -r requirements.txt \
+    && python -m pip install /tmp/pundit-prediction-module
 
 RUN addgroup --system app \
     && adduser --system --ingroup app app \

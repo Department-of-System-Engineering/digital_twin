@@ -1,4 +1,4 @@
-﻿from config_log import setup_logging
+﻿from .config_log import setup_logging
 
 import asyncio
 import time

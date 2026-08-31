@@ -1,15 +1,16 @@
 import logging.config
 import os
 import sys
+from pathlib import Path
 
 
 def setup_logging() -> None:
     # Set the log directory directly
-    log_dir = "./logs"
-    os.makedirs(log_dir, exist_ok=True)
+    log_dir = Path(__file__).resolve().parent / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
 
     # Base filename for the logs
-    log_file_path = os.path.join(log_dir, "dt_application.log")
+    log_file_path = log_dir / "dt_application.log"
 
     # Logging configuration dictionary
     logging_config = {

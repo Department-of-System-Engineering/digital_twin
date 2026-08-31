@@ -20,6 +20,8 @@ x-app-service: &app-service
   build:
     context: .
     dockerfile: Dockerfile
+    additional_contexts:
+      prediction_module_src: ${PREDICTION_MODULE_PATH:-/home/dt/pundit-prediction-module}
   environment: *app-environment
   init: true
 
@@ -80,7 +82,7 @@ services:
     volumes:
       - prediction_data:/data/predictions
       - ./config/prediction.toml:/app/config/prediction.toml:ro
-      - ./host_dt_logs:./logs # A gazdaszerver (host) mappájának összerendelése a konténer log mappájával. Szintaxis: <host_könyvtár>:<konténer_könyvtár>
+      - ./dt_log:/app/app/maintenance/logs # A gazdaszerver (host) mappájának összerendelése a konténer log mappájával. Szintaxis: <host_könyvtár>:<konténer_könyvtár>
     depends_on:
       db-init:
         condition: service_completed_successfully
