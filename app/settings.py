@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     INBOUND_API_KEY: SecretStr
     MAPPING_ADMIN_API_KEY: SecretStr | None = None
 
+    DASHBOARD_LIVE_TOLERANCE_SECONDS: float = 5.0
+    DASHBOARD_WS_POLL_INTERVAL_SECONDS: float = 0.1
+
     DATA_DIR: str = "./app/maintenance/prediction_out"  # helyi könyvtár is lehet
 
     model_config = SettingsConfigDict(

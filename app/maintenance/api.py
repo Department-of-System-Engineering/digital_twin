@@ -14,6 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_async_session
+from ..dashboard.api import router as dashboard_router
 from .asset_mapping import apply_asset_mappings
 from .jobs import enqueue_prediction_job
 from .schemas import (
@@ -32,6 +33,7 @@ app = FastAPI(
     title="Asset Prediction API",
     version="1.0.0",
 )
+app.include_router(dashboard_router)
 
 
 @app.exception_handler(RequestValidationError)

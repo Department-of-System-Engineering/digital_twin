@@ -198,3 +198,10 @@ API `POST /sf_asset_mapping` végpontján lehet betölteni. A végpontot a kül�
 `MAPPING_ADMIN_API_KEY` védi. JSON-fájl importálásához használható a
 `scripts/import_asset_mappings.py` segédprogram. A részletes formátum és a
 konfliktuskezelés a `docs/asset_mapping.md` dokumentumban található.
+
+## Dashboard integráció
+
+A külön `dt_dashboard` repository REST és WebSocket kapcsolaton keresztül éri el
+ezt a backendet. A folyamatgráf, a szenzoronkénti mintavételezés és aggregáció, a
+rendelések, a konkrét termékpéldányok, az NFC-tálcák, a KPI-k és az élő grafikon
+részletes szerződése a `docs/dashboard.md` dokumentumban található.
