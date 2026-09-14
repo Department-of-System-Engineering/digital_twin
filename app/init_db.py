@@ -4,6 +4,7 @@ from pathlib import Path
 from sqlalchemy import inspect, text
 
 from .db import sync_engine
+from .maintenance.sensor_failure_sync import configure_sensor_failure_type_sync
 from .models import Base
 
 
@@ -158,7 +159,14 @@ def main() -> None:
 
         for statement in POST_MODEL_SCHEMA_UPDATES:
             connection.execute(text(statement))
+
+        inserted_sensor_failure_types = configure_sensor_failure_type_sync(connection)
         connection.commit()
+
+        log.info(
+            "Sensor/failure-type synchronization complete: inserted=%s",
+            inserted_sensor_failure_types,
+        )
 
         existing_tables = set(
             inspect(connection).get_table_names(schema="public")

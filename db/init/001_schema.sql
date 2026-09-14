@@ -281,6 +281,8 @@ CREATE TABLE public.sensor_failure_types (
     sensor_id BIGINT NOT NULL,
     failure_type_id BIGINT NOT NULL,
     CONSTRAINT pk_sensor_failure_types PRIMARY KEY (sensor_failure_type_id),
+    CONSTRAINT ux_sensor_failure_types_sensor_failure
+        UNIQUE (sensor_id, failure_type_id),
     CONSTRAINT fk_sensor_failure_types_sensors
         FOREIGN KEY (sensor_id) REFERENCES public.sensors (sensor_id),
     CONSTRAINT fk_sensor_failure_types_failure_types

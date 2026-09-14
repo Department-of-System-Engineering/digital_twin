@@ -241,6 +241,14 @@ class SensorFailureType(Base):
     sensor_id: Mapped[int] = mapped_column(ForeignKey("sensors.sensor_id"), nullable=False)
     failure_type_id: Mapped[int] = mapped_column(ForeignKey("failure_types.failure_type_id"), nullable=False)
 
+    __table_args__ = (
+        UniqueConstraint(
+            "sensor_id",
+            "failure_type_id",
+            name="ux_sensor_failure_types_sensor_failure",
+        ),
+    )
+
 
 class SensorStatistic(Base):
     __tablename__ = "sensor_statistics"
