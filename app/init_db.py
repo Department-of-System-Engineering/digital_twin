@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 from sqlalchemy import inspect, text
 
@@ -8,6 +9,12 @@ from .models import Base
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("db-init")
+
+
+SEED_DATA_PATH = (
+    Path(__file__).resolve().parent.parent / "db" / "init" / "002_seed_data.sql"
+)
+SEED_STATEMENT_SEPARATOR = "-- seed-statement"
 
 
 REQUIRED_TABLES = {
@@ -93,14 +100,6 @@ SCHEMA_UPDATES = (
 )
 
 POST_MODEL_SCHEMA_UPDATES = (
-    "INSERT INTO public.data_sources "
-    "(data_source_id, source_key, source_name, source_type, enabled) "
-    "VALUES (1, 'real', 'Physical system', 'physical', TRUE) "
-    "ON CONFLICT (data_source_id) DO UPDATE SET "
-    "source_key = EXCLUDED.source_key, source_name = EXCLUDED.source_name, "
-    "source_type = EXCLUDED.source_type, enabled = EXCLUDED.enabled",
-    "SELECT setval(pg_get_serial_sequence('public.data_sources', 'data_source_id'), "
-    "GREATEST((SELECT MAX(data_source_id) FROM public.data_sources), 1))",
     "ALTER TABLE public.measurements ADD COLUMN IF NOT EXISTS data_source_id BIGINT",
     "UPDATE public.measurements SET data_source_id = 1 WHERE data_source_id IS NULL",
     "ALTER TABLE public.measurements ALTER COLUMN data_source_id SET DEFAULT 1",
@@ -117,19 +116,6 @@ POST_MODEL_SCHEMA_UPDATES = (
     "ALTER TABLE public.sensors ADD CONSTRAINT ck_sensors_chart_aggregation_method "
     "CHECK (chart_aggregation_method IN "
     "('average', 'latest', 'minimum', 'maximum')); END IF; END $$",
-    "INSERT INTO public.process_configurations (configuration_name, is_active) "
-    "SELECT 'Default', TRUE WHERE NOT EXISTS "
-    "(SELECT 1 FROM public.process_configurations WHERE is_active)",
-    "INSERT INTO public.product_types (product_type_name, max_quantity) VALUES "
-    "('A', 20), ('B', 30), ('C', 10), ('D', 50), ('Special', 5) "
-    "ON CONFLICT (product_type_name) DO NOTHING",
-    "INSERT INTO public.user_types (user_type_id, user_type_name) VALUES "
-    "(1, 'Customer'), (2, 'Operator'), (3, 'Technician'), "
-    "(4, 'Shift Supervisor'), (5, 'Engineer'), (6, 'Manager') "
-    "ON CONFLICT (user_type_id) DO UPDATE "
-    "SET user_type_name = EXCLUDED.user_type_name",
-    "SELECT setval(pg_get_serial_sequence('public.user_types', 'user_type_id'), "
-    "GREATEST((SELECT MAX(user_type_id) FROM public.user_types), 1))",
     "SELECT create_hypertable('public.kpi_values', by_range('time'), "
     "if_not_exists => TRUE)",
 )
@@ -141,6 +127,17 @@ REQUIRED_HYPERTABLES = {
     "prediction_asset_failure_type_levels",
     "prediction_asset_levels",
 }
+
+
+def load_seed_statements() -> tuple[str, ...]:
+    """Load independently executable, idempotent seed statements."""
+
+    seed_sql = SEED_DATA_PATH.read_text(encoding="utf-8")
+    return tuple(
+        statement.strip()
+        for statement in seed_sql.split(SEED_STATEMENT_SEPARATOR)
+        if statement.strip()
+    )
 
 
 def main() -> None:
@@ -155,6 +152,10 @@ def main() -> None:
 
         # Create dashboard tables on existing installations as well as on fresh ones.
         Base.metadata.create_all(connection, checkfirst=True)
+        for statement in load_seed_statements():
+            connection.execute(text(statement))
+        connection.commit()
+
         for statement in POST_MODEL_SCHEMA_UPDATES:
             connection.execute(text(statement))
         connection.commit()

@@ -21,6 +21,7 @@ RUN addgroup --system app \
 
 COPY --chown=app:app app ./app
 COPY --chown=app:app config ./config
+COPY --chown=app:app db/init ./db/init
 
 USER app
 
