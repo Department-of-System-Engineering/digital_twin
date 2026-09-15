@@ -53,6 +53,7 @@ class Asset(Base):
     __tablename__ = "assets"
 
     asset_id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    asset_key: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     asset_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     cmms_asset_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
     dc_asset_id: Mapped[str | None] = mapped_column(Text, nullable=True, unique=True)
@@ -62,6 +63,7 @@ class MeasurementType(Base):
     __tablename__ = "measurement_types"
 
     measurement_type_id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    measurement_type_key: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     measurement_type_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     unit: Mapped[str] = mapped_column(Text, nullable=False)
     unit_name: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -81,6 +83,7 @@ class SensorType(Base):
     __tablename__ = "sensor_types"
 
     type_id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    sensor_type_key: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     type_name: Mapped[str] = mapped_column(Text, nullable=False)
     max_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     min_value: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -122,6 +125,7 @@ class Sensor(Base):
     __tablename__ = "sensors"
 
     sensor_id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    sensor_key: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     sensor_name: Mapped[str] = mapped_column(Text, nullable=False)
     measurement_frequency: Mapped[float | None] = mapped_column(Float, nullable=True)
     ranges_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
@@ -293,6 +297,7 @@ class ProcessConfiguration(Base):
     process_configuration_id: Mapped[int] = mapped_column(
         BigInteger, Identity(), primary_key=True
     )
+    configuration_key: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     configuration_name: Mapped[str] = mapped_column(Text, nullable=False)
     valid_from: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now, server_default=text("CURRENT_TIMESTAMP")
@@ -320,6 +325,7 @@ class ProcessStep(Base):
     __tablename__ = "process_steps"
 
     process_step_id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    process_step_key: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     process_step_name: Mapped[str] = mapped_column(Text, nullable=False)
     processing_time: Mapped[float] = mapped_column(Float, nullable=False)
 
@@ -386,6 +392,7 @@ class ProductType(Base):
     __tablename__ = "product_types"
 
     product_type_id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    product_type_key: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     product_type_name: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     max_quantity: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -591,6 +598,7 @@ class UserType(Base):
     __tablename__ = "user_types"
 
     user_type_id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    user_type_key: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     user_type_name: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
 
 

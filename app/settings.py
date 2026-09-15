@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     PREDICTION_CONFIG_PATH: str = "./config/prediction.toml"
     DATACOLLECTOR_CONFIG_PATH: str = "./config/datacollector.toml"
     DATACOLLECTOR_REJECTED_LOG_PATH: str = "./logs/datacollector_rejected.log"
+    SEED_WORKBOOK_PATH: str = "./db/init/data/db_init_data.xlsx"
 
     INBOUND_API_KEY: SecretStr
     MAPPING_ADMIN_API_KEY: SecretStr | None = None

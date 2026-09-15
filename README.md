@@ -13,8 +13,9 @@ majd visszaküldi azt a CMMS felé.
 - `datacollector`: a SilverFrog DC metaadatainak és méréseinek időzített
   betöltője;
 - `db`: PostgreSQL 16 + TimescaleDB;
-- `db-init`: induláskor ellenőrzi az adatbázis tábláit, a TimescaleDB bővítményt, a
-  `jobstatus` enumot és a hypertable-öket.
+- `db-init`: induláskor importálja és ellenőrzi az Excelben kezelt törzsadatokat,
+  majd ellenőrzi az adatbázis tábláit, a TimescaleDB bővítményt, a `jobstatus`
+  enumot és a hypertable-öket.
 
 Az adatbázis objektumai a `public` sémában vannak. Az inicializáló séma:
 `db/init/001_schema.sql`.
@@ -169,6 +170,7 @@ elsőbbséget élveznek.
 - `docs/mukodes.md` – az API, a queue, a worker és a CMMS-adatfolyam működése;
 - `docs/system.md` – rendszer- és komponensáttekintés;
 - `docs/operations.md` – üzemeltetési ellenőrzőlista és gyakori parancsok;
+- `docs/database_initialization.md` – az Excel-alapú, bővíthető hidegindítási adatimport;
 - `docs/openapi.json` – API-leírás;
 - `docs/cmms_get_calls_system.json` – CMMS-hívásokhoz kapcsolódó referencia.
 

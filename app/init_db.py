@@ -1,21 +1,16 @@
 import logging
-from pathlib import Path
 
 from sqlalchemy import inspect, text
 
 from .db import sync_engine
 from .maintenance.sensor_failure_sync import configure_sensor_failure_type_sync
 from .models import Base
+from .seed_data import import_seed_workbook, load_seed_workbook
+from .settings import settings
 
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("db-init")
-
-
-SEED_DATA_PATH = (
-    Path(__file__).resolve().parent.parent / "db" / "init" / "002_seed_data.sql"
-)
-SEED_STATEMENT_SEPARATOR = "-- seed-statement"
 
 
 REQUIRED_TABLES = {
@@ -98,12 +93,32 @@ SCHEMA_UPDATES = (
     ")",
     "ALTER TABLE public.sensors ADD COLUMN IF NOT EXISTS "
     "chart_aggregation_method CHARACTER VARYING(16) NOT NULL DEFAULT 'latest'",
+    "ALTER TABLE public.measurements ADD COLUMN IF NOT EXISTS data_source_id BIGINT",
+)
+
+PRE_SEED_SCHEMA_UPDATES = (
+    "ALTER TABLE public.assets ADD COLUMN IF NOT EXISTS asset_key CHARACTER VARYING(64)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_assets_asset_key ON public.assets (asset_key)",
+    "ALTER TABLE public.measurement_types ADD COLUMN IF NOT EXISTS measurement_type_key CHARACTER VARYING(64)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_measurement_types_key ON public.measurement_types (measurement_type_key)",
+    "ALTER TABLE public.sensor_types ADD COLUMN IF NOT EXISTS sensor_type_key CHARACTER VARYING(64)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_sensor_types_key ON public.sensor_types (sensor_type_key)",
+    "ALTER TABLE public.sensors ADD COLUMN IF NOT EXISTS sensor_key CHARACTER VARYING(64)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_sensors_key ON public.sensors (sensor_key)",
+    "ALTER TABLE public.process_configurations ADD COLUMN IF NOT EXISTS configuration_key CHARACTER VARYING(64)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_process_configurations_key ON public.process_configurations (configuration_key)",
+    "ALTER TABLE public.process_steps ADD COLUMN IF NOT EXISTS process_step_key CHARACTER VARYING(64)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_process_steps_key ON public.process_steps (process_step_key)",
+    "ALTER TABLE public.product_types ADD COLUMN IF NOT EXISTS product_type_key CHARACTER VARYING(64)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_product_types_key ON public.product_types (product_type_key)",
+    "ALTER TABLE public.user_types ADD COLUMN IF NOT EXISTS user_type_key CHARACTER VARYING(64)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_user_types_key ON public.user_types (user_type_key)",
 )
 
 POST_MODEL_SCHEMA_UPDATES = (
-    "ALTER TABLE public.measurements ADD COLUMN IF NOT EXISTS data_source_id BIGINT",
-    "UPDATE public.measurements SET data_source_id = 1 WHERE data_source_id IS NULL",
-    "ALTER TABLE public.measurements ALTER COLUMN data_source_id SET DEFAULT 1",
+    "UPDATE public.measurements SET data_source_id = ("
+    "SELECT data_source_id FROM public.data_sources WHERE source_key = 'real'"
+    ") WHERE data_source_id IS NULL",
     "ALTER TABLE public.measurements ALTER COLUMN data_source_id SET NOT NULL",
     "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint "
     "WHERE conname = 'fk_measurements_data_sources') THEN "
@@ -130,17 +145,6 @@ REQUIRED_HYPERTABLES = {
 }
 
 
-def load_seed_statements() -> tuple[str, ...]:
-    """Load independently executable, idempotent seed statements."""
-
-    seed_sql = SEED_DATA_PATH.read_text(encoding="utf-8")
-    return tuple(
-        statement.strip()
-        for statement in seed_sql.split(SEED_STATEMENT_SEPARATOR)
-        if statement.strip()
-    )
-
-
 def main() -> None:
     """Verify the SQL-managed TimescaleDB schema before app startup."""
 
@@ -153,9 +157,19 @@ def main() -> None:
 
         # Create dashboard tables on existing installations as well as on fresh ones.
         Base.metadata.create_all(connection, checkfirst=True)
-        for statement in load_seed_statements():
+        for statement in PRE_SEED_SCHEMA_UPDATES:
             connection.execute(text(statement))
         connection.commit()
+
+        seed = load_seed_workbook(settings.SEED_WORKBOOK_PATH)
+        import_result = import_seed_workbook(connection, seed)
+        connection.commit()
+
+        log.info(
+            "Excel seed import complete: workbook=%s, rows=%s",
+            seed.path,
+            import_result.total_rows,
+        )
 
         for statement in POST_MODEL_SCHEMA_UPDATES:
             connection.execute(text(statement))
