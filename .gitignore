@@ -10,3 +10,4 @@ app/maintenance/prediction_out
 *.log
 backups/
 /asset_mappings.json
+dt_log/
