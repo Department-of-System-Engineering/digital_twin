@@ -210,32 +210,53 @@ class Prediction(Base):
 
     prediction_id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     asset_id: Mapped[int] = mapped_column(ForeignKey("assets.asset_id"), nullable=False)
-    asset_failure_type_id: Mapped[int | None] = mapped_column(ForeignKey("asset_failure_types.asset_failure_type_id"), nullable=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("prediction_jobs.job_id"), nullable=False)
+    nowcast_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    forecast_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index(
+            "ix_predictions_asset_nowcast_time",
+            "asset_id",
+            "nowcast_time",
+        ),
+    )
 
 
 class PredictionAssetLevel(Base):
     __tablename__ = "prediction_asset_levels"
 
     prediction_asset_id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True, autoincrement=True)
-    forecast_time: Mapped[datetime] = mapped_column(DateTime, primary_key=True)
-    prediction_id: Mapped[int] = mapped_column(ForeignKey("predictions.prediction_id"), nullable=False)
+    prediction_id: Mapped[int] = mapped_column(ForeignKey("predictions.prediction_id", ondelete="CASCADE"), nullable=False)
     nowcast_reliability: Mapped[float] = mapped_column(Float, nullable=False)
     forecast_reliability: Mapped[float] = mapped_column(Float, nullable=False)
     nowcast_virtual_age: Mapped[float] = mapped_column(Float, nullable=False)
     forecast_virtual_age: Mapped[float] = mapped_column(Float, nullable=False)
-    nowcast_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "prediction_id",
+            name="ux_prediction_asset_levels_prediction",
+        ),
+    )
 
 
 class PredictionAssetFailureTypeLevel(Base):
     __tablename__ = "prediction_asset_failure_type_levels"
 
     prediction_asset_failure_id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True, autoincrement=True)
-    forecast_time: Mapped[datetime] = mapped_column(DateTime, primary_key=True)
-    prediction_id: Mapped[int] = mapped_column(ForeignKey("predictions.prediction_id"), nullable=False)
+    prediction_id: Mapped[int] = mapped_column(ForeignKey("predictions.prediction_id", ondelete="CASCADE"), nullable=False)
+    asset_failure_type_id: Mapped[int] = mapped_column(ForeignKey("asset_failure_types.asset_failure_type_id"), nullable=False)
     nowcast_failure_type_probability: Mapped[float] = mapped_column(Float, nullable=False)
     forecast_failure_type_probability: Mapped[float] = mapped_column(Float, nullable=False)
-    nowcast_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "prediction_id",
+            "asset_failure_type_id",
+            name="ux_prediction_failure_type",
+        ),
+    )
 
 
 class SensorFailureType(Base):

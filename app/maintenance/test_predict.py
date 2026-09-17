@@ -29,8 +29,8 @@ def predict(
     A függvény:
 
     1. meghatározza az eszközhöz tartozó failure_type_id értékeket;
-    2. létrehozza az eszköz- és hibaoktípus-szintű predictions rekordokat;
-    3. dummy idősoros megbízhatósági értékeket generál;
+    2. létrehozza a predikció fejlécét a nowcast- és forecasthatárral;
+    3. dummy megbízhatósági és hibatípus-valószínűségeket generál;
     4. elmenti azokat a prediction_asset_levels és
        prediction_asset_failure_type_levels táblákba;
     5. visszaadja a worker által elvárt eredményt.
@@ -75,37 +75,8 @@ def predict(
             if not failure_type_ids:
                 raise ValueError("No failure types are available for dummy prediction")
 
-            # Ez az összesített, eszközszintű predikció,
-            # ezért nincs egyetlen hibaoktípushoz rendelve.
-            prediction = Prediction(job_id=job_id, asset_id=asset_id, asset_failure_type_id=None)
-
-            session.add(prediction)
-            session.flush()
-
-            prediction_id = int(prediction.prediction_id)
-
-            failure_type_predictions = []
-
-            for _, asset_failure_type_id in failure_type_pairs:
-                # Minden hibaoktípus külön prediction rekordot
-                # kap, ehhez kapcsolódnak a típusszintű idősorok.
-                failure_type_prediction = Prediction(
-                    job_id=job_id,
-                    asset_id=asset_id,
-                    asset_failure_type_id=asset_failure_type_id,
-                )
-
-                session.add(failure_type_prediction)
-                failure_type_predictions.append(
-                    failure_type_prediction
-                )
-
-            session.flush()
-
             nowcast_time = pd.Timestamp(maintenance_end_time)
-
             forecast_end = (nowcast_time + delta_horizon)
-
             forecast_times = pd.date_range(start=nowcast_time + delta_sampling, end=forecast_end, freq=delta_sampling)
 
             number_of_steps = len(forecast_times)
@@ -116,40 +87,45 @@ def predict(
             nowcast_reliability = 0.95
             final_reliability = 0.80
             nowcast_failure_type_probability = ((1.0 - nowcast_reliability) / len(failure_type_ids))
+            forecast_failure_type_probability = ((1.0 - final_reliability) / len(failure_type_ids))
 
-            for index, forecast_time in enumerate(forecast_times, start=1):
-                progress = index / number_of_steps
+            prediction = Prediction(
+                job_id=job_id,
+                asset_id=asset_id,
+                nowcast_time=nowcast_time.to_pydatetime(),
+                forecast_time=forecast_end.to_pydatetime(),
+            )
 
-                forecast_reliability = (nowcast_reliability - (nowcast_reliability - final_reliability) * progress)
+            session.add(prediction)
+            session.flush()
 
-                elapsed_seconds = (forecast_time - nowcast_time).total_seconds()
+            prediction_id = int(prediction.prediction_id)
 
-                session.add(PredictionAssetLevel(prediction_id=prediction_id, forecast_time=(forecast_time.to_pydatetime()),
-                                                 nowcast_reliability=(nowcast_reliability), forecast_reliability=(forecast_reliability),
-                                                 nowcast_virtual_age=0.0, forecast_virtual_age=(float(elapsed_seconds)), nowcast_time=(nowcast_time.to_pydatetime())))
+            session.add(
+                PredictionAssetLevel(
+                    prediction_id=prediction_id,
+                    nowcast_reliability=nowcast_reliability,
+                    forecast_reliability=final_reliability,
+                    nowcast_virtual_age=0.0,
+                    forecast_virtual_age=float(
+                        (forecast_end - nowcast_time).total_seconds()
+                    ),
+                )
+            )
 
-                forecast_failure_type_probability = ((1.0 - forecast_reliability) / len(failure_type_ids))
-
-                for failure_type_prediction in failure_type_predictions:
-                    session.add(
-                        PredictionAssetFailureTypeLevel(
-                            prediction_id=int(
-                                failure_type_prediction.prediction_id
-                            ),
-                            forecast_time=(
-                                forecast_time.to_pydatetime()
-                            ),
-                            nowcast_failure_type_probability=(
-                                nowcast_failure_type_probability
-                            ),
-                            forecast_failure_type_probability=(
-                                forecast_failure_type_probability
-                            ),
-                            nowcast_time=(
-                                nowcast_time.to_pydatetime()
-                            ),
-                        )
+            for _, asset_failure_type_id in failure_type_pairs:
+                session.add(
+                    PredictionAssetFailureTypeLevel(
+                        prediction_id=prediction_id,
+                        asset_failure_type_id=asset_failure_type_id,
+                        nowcast_failure_type_probability=(
+                            nowcast_failure_type_probability
+                        ),
+                        forecast_failure_type_probability=(
+                            forecast_failure_type_probability
+                        ),
                     )
+                )
 
             total_failure_probability = (1.0 - final_reliability)
 

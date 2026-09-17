@@ -140,9 +140,103 @@ REQUIRED_HYPERTABLES = {
     "asset_worksheet_lists",
     "measurements",
     "kpi_values",
+}
+
+
+PREDICTION_TABLES = (
     "prediction_asset_failure_type_levels",
     "prediction_asset_levels",
+    "predictions",
+)
+
+EXPECTED_PREDICTION_COLUMNS = {
+    "predictions": {
+        "prediction_id",
+        "asset_id",
+        "job_id",
+        "nowcast_time",
+        "forecast_time",
+    },
+    "prediction_asset_levels": {
+        "prediction_asset_id",
+        "prediction_id",
+        "nowcast_reliability",
+        "forecast_reliability",
+        "nowcast_virtual_age",
+        "forecast_virtual_age",
+    },
+    "prediction_asset_failure_type_levels": {
+        "prediction_asset_failure_id",
+        "prediction_id",
+        "asset_failure_type_id",
+        "nowcast_failure_type_probability",
+        "forecast_failure_type_probability",
+    },
 }
+
+
+def migrate_legacy_prediction_schema(connection) -> None:
+    """Rebuild empty prediction tables created with the obsolete layout.
+
+    The old layout stored timestamps in the result tables and the failure type
+    on separate ``predictions`` rows.  The prediction module expects one
+    prediction header containing the time horizon, with result rows linked to
+    that header.  Automatic rebuilding is deliberately limited to empty
+    tables so startup can never discard prediction history silently.
+    """
+
+    inspector = inspect(connection)
+    existing_tables = set(inspector.get_table_names(schema="public"))
+
+    if not set(PREDICTION_TABLES).issubset(existing_tables):
+        return
+
+    columns = {
+        table_name: {
+            column["name"]
+            for column in inspector.get_columns(
+                table_name,
+                schema="public",
+            )
+        }
+        for table_name in PREDICTION_TABLES
+    }
+
+    if columns == EXPECTED_PREDICTION_COLUMNS:
+        return
+
+    row_counts = {
+        table_name: connection.execute(
+            text(f'SELECT count(*) FROM public."{table_name}"')
+        ).scalar_one()
+        for table_name in PREDICTION_TABLES
+    }
+
+    populated_tables = {
+        table_name: row_count
+        for table_name, row_count in row_counts.items()
+        if row_count
+    }
+
+    if populated_tables:
+        details = ", ".join(
+            f"{table_name}={row_count}"
+            for table_name, row_count in populated_tables.items()
+        )
+        raise RuntimeError(
+            "Legacy prediction schema contains data and cannot be rebuilt "
+            f"automatically ({details}). Back up and migrate these tables "
+            "before restarting db-init."
+        )
+
+    log.info("Rebuilding empty legacy prediction tables")
+
+    for table_name in PREDICTION_TABLES:
+        connection.execute(
+            text(f'DROP TABLE public."{table_name}"')
+        )
+
+    connection.commit()
 
 
 def main() -> None:
@@ -154,6 +248,8 @@ def main() -> None:
         for statement in SCHEMA_UPDATES:
             connection.execute(text(statement))
         connection.commit()
+
+        migrate_legacy_prediction_schema(connection)
 
         # Create dashboard tables on existing installations as well as on fresh ones.
         Base.metadata.create_all(connection, checkfirst=True)
@@ -193,6 +289,23 @@ def main() -> None:
                 + ", ".join(sorted(missing_tables))
             )
 
+        prediction_columns = {
+            table_name: {
+                column["name"]
+                for column in inspect(connection).get_columns(
+                    table_name,
+                    schema="public",
+                )
+            }
+            for table_name in PREDICTION_TABLES
+        }
+
+        if prediction_columns != EXPECTED_PREDICTION_COLUMNS:
+            raise RuntimeError(
+                "Prediction table columns do not match the prediction "
+                "module contract"
+            )
+
         has_timescaledb = connection.execute(
             text(
                 "SELECT EXISTS ("
@@ -220,6 +333,17 @@ def main() -> None:
             raise RuntimeError(
                 "Tables not configured as hypertables: "
                 + ", ".join(sorted(missing_hypertables))
+            )
+
+        unexpected_prediction_hypertables = (
+            set(PREDICTION_TABLES) & hypertables
+        )
+
+        if unexpected_prediction_hypertables:
+            raise RuntimeError(
+                "Prediction tables must be regular PostgreSQL tables, not "
+                "hypertables: "
+                + ", ".join(sorted(unexpected_prediction_hypertables))
             )
 
         has_jobstatus = connection.execute(

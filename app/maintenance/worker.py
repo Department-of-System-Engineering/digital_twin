@@ -319,6 +319,8 @@ def process_job(session: Session, job: PredictionJob) -> None:
         if _is_admin_shutdown_error(error):
             raise
 
+        session.rollback()
+
         update_job_status(session=session, job_id=job_id, status=JobStatus.error, error_message=("Prediction failed: " f"{error}"))
         return
 

@@ -103,6 +103,11 @@ A `db/init/001_schema.sql` csak üres adatvolume első inicializálásakor fut. 
 már működő adatbázison ne a fájl átírásától várd a változást: készíts migrációt,
 mentsd az adatbázist, majd előbb tesztkörnyezetben próbáld ki.
 
+A `db-init` az elavult predikciós hypertable-sémát automatikusan lecseréli, ha
+a három predikciós tábla üres. Ha bármelyikben adat található, a szolgáltatás
+szándékosan hibával leáll, hogy ne törölhessen predikciós előzményt. Ilyenkor
+előbb mentés és külön adatmigráció szükséges.
+
 ## Backup
 
 ```powershell

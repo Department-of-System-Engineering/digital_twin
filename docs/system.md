@@ -56,12 +56,15 @@ A containerek újraépítése nem törli a volume-okat. A
 - adatbázis: alapértelmezetten `dt_db_cmms`;
 - tulajdonos/felhasználó: alapértelmezetten `dt_admin`;
 - alkalmazásséma: `public`;
-- 18 üzleti/technikai tábla;
-- 4 TimescaleDB hypertable:
+- TimescaleDB hypertable-ek:
   - `asset_worksheet_lists`;
   - `measurements`;
-  - `prediction_asset_failure_type_levels`;
-  - `prediction_asset_levels`.
+  - `kpi_values`.
+
+A `predictions`, `prediction_asset_levels` és
+`prediction_asset_failure_type_levels` normál PostgreSQL-táblák. A predikció
+időhorizontja a `predictions` rekordban található; a két eredménytábla ehhez a
+rekordhoz kapcsolódik.
 
 A séma SQL-alapú inicializálása csak üres volume első indulásakor történik meg.
 Már létező adatbázis módosításához verziózott migráció szükséges; az Alembic

@@ -17,6 +17,9 @@ Docker Compose enforces this through the `db-init` dependency.
    data source on ID 1. This preserves compatibility with direct database
    writers that use the default data source.
 3. The one-shot `db-init` service applies compatible schema updates.
+   Empty prediction tables using the obsolete hypertable layout are rebuilt
+   as regular PostgreSQL tables. If legacy prediction rows exist, startup
+   stops instead of deleting them and requires an explicit data migration.
 4. `db-init` validates the complete Excel workbook before importing any row.
 5. Reference data is upserted using stable keys such as `asset_key` and
    `process_step_key`. PostgreSQL continues to generate the numeric IDs.
