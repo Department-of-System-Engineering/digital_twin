@@ -15,7 +15,7 @@ x-app-environment: &app-environment
   DATACOLLECTOR_CONFIG_PATH: /app/config/datacollector.toml
   DATACOLLECTOR_REJECTED_LOG_PATH: /data/datacollector/datacollector_rejected.log
   SEED_WORKBOOK_PATH: /app/db/init/data/db_init_data.xlsx
-  DASHBOARD_MAX_CHART_POINTS: ${DASHBOARD_MAX_CHART_POINTS:-5000}
+  DASHBOARD_MAX_CHART_POINTS: ${DASHBOARD_MAX_CHART_POINTS:-2000}
 
 x-app-service: &app-service
   image: digital-twin-simple:local

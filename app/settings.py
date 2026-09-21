@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     DASHBOARD_LIVE_TOLERANCE_SECONDS: float = 5.0
     DASHBOARD_WS_POLL_INTERVAL_SECONDS: float = 0.1
-    DASHBOARD_MAX_CHART_POINTS: int = Field(default=5000, gt=0)
+    DASHBOARD_MAX_CHART_POINTS: int = Field(default=2000, gt=0)
 
     DATA_DIR: str = "./app/maintenance/prediction_out"  # helyi könyvtár is lehet
 

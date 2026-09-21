@@ -42,6 +42,10 @@ Historical responses contain at most `DASHBOARD_MAX_CHART_POINTS` recent
 buckets. Live polling also uses an explicit time predicate so TimescaleDB can
 exclude old chunks from every poll.
 
+The dashboard initially uses a 5-second sampling frequency and requests the
+time window for the most recent 2000 sampled chart points. Both the browser and
+the backend keep at most 2000 chart points by default.
+
 ## Process topology
 
 `process_configurations` versions a complete topology. `routing` stores directed
