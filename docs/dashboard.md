@@ -9,9 +9,11 @@ all joins and chart pivoting happen in the backend.
 
 - REST serves process topology, assets, sensor metadata, chart history, products,
   orders and KPI values.
-- `WS /ws/sensors/chart` serves live chart deltas after the historical REST query.
-- A chart opens a WebSocket only when its `toDate` is within five seconds of the
-  browser's current server-local time.
+- `WS /ws/sensors/chart` serves live chart deltas in parallel with the
+  historical REST query, so slow history loading cannot delay live updates.
+- A chart opens a WebSocket only when its `toDate` is close to the browser's
+  current server-local time. The dashboard allows 90 seconds by default because
+  manually selected `datetime-local` values may be minute-aligned.
 - The WebSocket emits the same `ChartData[]` shape as `POST /sensors/chart`.
 
 The current implementation discovers measurements written by either Node-RED or
@@ -35,6 +37,10 @@ max(request.filter.samplingFrequency, sensors.measurement_frequency)
 
 `sensors.chart_aggregation_method` controls each sensor independently and accepts
 `average`, `latest`, `minimum` or `maximum`. Its default is `latest`.
+
+Historical responses contain at most `DASHBOARD_MAX_CHART_POINTS` recent
+buckets. Live polling also uses an explicit time predicate so TimescaleDB can
+exclude old chunks from every poll.
 
 ## Process topology
 

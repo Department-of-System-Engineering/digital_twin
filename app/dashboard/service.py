@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy import bindparam, func, select, text, update
@@ -14,6 +14,7 @@ from ..models import (
     Tray,
     TrayProductAssignment,
 )
+from ..settings import settings
 from .schemas import (
     AssetOut,
     BaseMetric,
@@ -197,6 +198,18 @@ async def get_sensor_details(
     ]
 
 
+def _chart_query_start(request: ChartRequest) -> datetime:
+    """Limit history work to the number of points the dashboard can display."""
+
+    visible_window = timedelta(
+        seconds=(
+            request.filter.samplingFrequency
+            * settings.DASHBOARD_MAX_CHART_POINTS
+        )
+    )
+    return max(request.filter.fromDate, request.filter.toDate - visible_window)
+
+
 async def get_chart_data(
     session: AsyncSession, request: ChartRequest
 ) -> list[dict[str, float | str]]:
@@ -228,7 +241,7 @@ async def get_chart_data(
                 "sensor_ids": request.sensorIds,
                 "source": request.source,
                 "frequency": request.filter.samplingFrequency,
-                "from_date": request.filter.fromDate,
+                "from_date": _chart_query_start(request),
                 "to_date": request.filter.toDate,
             },
         )
@@ -241,7 +254,7 @@ async def get_chart_data(
             bucket, {"xAxis": bucket.isoformat(timespec="milliseconds")}
         )
         point[str(row["sensor_id"])] = float(row["aggregated_value"])
-    return list(points.values())
+    return list(points.values())[-settings.DASHBOARD_MAX_CHART_POINTS :]
 
 
 async def list_products(session: AsyncSession) -> list[ProductOut]:

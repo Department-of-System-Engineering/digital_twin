@@ -257,7 +257,7 @@ async def sensor_chart_websocket(websocket: WebSocket) -> None:
                 "SELECT COALESCE(max(m.measurement_id), 0) FROM measurements m "
                 "JOIN data_sources ds ON ds.data_source_id = m.data_source_id "
                 "WHERE m.sensor_id IN :sensor_ids AND ds.source_key = :source "
-                "AND m.time <= :to_date"
+                "AND m.time >= :from_date AND m.time <= :to_date"
             ).bindparams(bindparam("sensor_ids", expanding=True))
             last_measurement_id = int(
                 await session.scalar(
@@ -266,6 +266,7 @@ async def sensor_chart_websocket(websocket: WebSocket) -> None:
                         "sensor_ids": list(sensor_config),
                         "source": request.source,
                         "to_date": request.filter.toDate,
+                        "from_date": request.filter.fromDate,
                     },
                 )
                 or 0
@@ -318,12 +319,16 @@ async def sensor_chart_websocket(websocket: WebSocket) -> None:
             }
             for row in hydrated_rows
         }
+        live_scan_start = request.filter.toDate - timedelta(
+            seconds=max(frequency for frequency, _ in sensor_config.values())
+        )
         measurement_statement = text(
             "SELECT m.measurement_id, m.sensor_id, m.time, m.value "
             "FROM measurements m JOIN data_sources ds "
             "ON ds.data_source_id = m.data_source_id "
             "WHERE m.measurement_id > :last_id AND m.sensor_id IN :sensor_ids "
             "AND ds.source_key = :source "
+            "AND m.time >= :scan_from_time "
             "ORDER BY m.measurement_id"
         ).bindparams(bindparam("sensor_ids", expanding=True))
 
@@ -345,6 +350,7 @@ async def sensor_chart_websocket(websocket: WebSocket) -> None:
                             "last_id": last_measurement_id,
                             "sensor_ids": list(sensor_config),
                             "source": request.source,
+                            "scan_from_time": live_scan_start,
                         },
                     )
                 ).mappings().all()

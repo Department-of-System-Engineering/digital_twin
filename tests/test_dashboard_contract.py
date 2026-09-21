@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.dashboard.schemas import ChartRequest, OrderCreate, TrackingEventRequest
-from app.dashboard.service import _number_type
+from app.dashboard.service import _chart_query_start, _number_type
 
 
 def test_chart_request_preserves_dashboard_contract_and_deduplicates_sensors() -> None:
@@ -33,6 +33,25 @@ def test_chart_request_rejects_reversed_range() -> None:
                 },
             }
         )
+
+
+def test_chart_history_is_bounded_to_display_capacity(monkeypatch) -> None:
+    request = ChartRequest.model_validate(
+        {
+            "sensorIds": [7],
+            "filter": {
+                "samplingFrequency": 1,
+                "fromDate": "2026-09-11T10:00:00",
+                "toDate": "2026-09-11T12:00:00",
+            },
+        }
+    )
+    monkeypatch.setattr(
+        "app.dashboard.service.settings.DASHBOARD_MAX_CHART_POINTS",
+        60,
+    )
+
+    assert _chart_query_start(request).isoformat() == "2026-09-11T11:59:00"
 
 
 def test_order_requires_at_least_one_positive_quantity() -> None:
