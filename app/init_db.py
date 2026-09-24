@@ -39,6 +39,10 @@ REQUIRED_TABLES = {
     "product_instances",
     "product_tracking_events",
     "product_types",
+    "qc_findings",
+    "qc_inspections",
+    "qc_jobs",
+    "qc_variant_mapping",
     "ranges",
     "sensor_failure_types",
     "sensor_statistics",
@@ -94,6 +98,32 @@ SCHEMA_UPDATES = (
     "ALTER TABLE public.sensors ADD COLUMN IF NOT EXISTS "
     "chart_aggregation_method CHARACTER VARYING(16) NOT NULL DEFAULT 'latest'",
     "ALTER TABLE public.measurements ADD COLUMN IF NOT EXISTS data_source_id BIGINT",
+    "ALTER TABLE public.product_tracking_events ADD COLUMN IF NOT EXISTS "
+    "external_event_id CHARACTER VARYING(200)",
+    "ALTER TABLE public.product_tracking_events ADD COLUMN IF NOT EXISTS "
+    "next_process_step_id BIGINT",
+    "DO $$ BEGIN "
+    "IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+    "WHERE conname = 'fk_product_tracking_events_next_process_step') THEN "
+    "ALTER TABLE public.product_tracking_events "
+    "ADD CONSTRAINT fk_product_tracking_events_next_process_step "
+    "FOREIGN KEY (next_process_step_id) "
+    "REFERENCES public.process_steps (process_step_id); "
+    "END IF; END $$",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_product_tracking_events_external_event_id "
+    "ON public.product_tracking_events (external_event_id) "
+    "WHERE external_event_id IS NOT NULL",
+    "DO $$ BEGIN IF NOT EXISTS ("
+    "SELECT 1 FROM pg_constraint WHERE conname = 'ck_product_instances_status' "
+    "AND conrelid = 'public.product_instances'::regclass "
+    "AND pg_get_constraintdef(oid) LIKE '%rework%'"
+    ") THEN "
+    "ALTER TABLE public.product_instances "
+    "DROP CONSTRAINT IF EXISTS ck_product_instances_status; "
+    "ALTER TABLE public.product_instances "
+    "ADD CONSTRAINT ck_product_instances_status CHECK (status IN "
+    "('queued', 'assigned', 'in_progress', 'completed', 'cancelled', 'done', 'rework')); "
+    "END IF; END $$",
 )
 
 PRE_SEED_SCHEMA_UPDATES = (
@@ -127,6 +157,7 @@ POST_MODEL_SCHEMA_UPDATES = (
     "END IF; END $$",
     "CREATE INDEX IF NOT EXISTS ix_measurements_sensor_source_time "
     "ON public.measurements (sensor_id, data_source_id, time DESC)",
+    "ALTER TABLE public.qc_jobs ADD COLUMN IF NOT EXISTS cancel_reason TEXT",
     "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint "
     "WHERE conname = 'ck_sensors_chart_aggregation_method') THEN "
     "ALTER TABLE public.sensors ADD CONSTRAINT ck_sensors_chart_aggregation_method "

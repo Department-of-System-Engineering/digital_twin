@@ -62,6 +62,17 @@ With Docker Compose:
 docker compose run --rm db-init
 ```
 
+For later master-data additions on a running installation, use the dedicated
+transactional command instead of recreating the database:
+
+```bash
+python3 scripts/database_admin.py seed-validate
+python3 scripts/database_admin.py seed-update
+```
+
+Manual full-database backup and verification are documented in
+`docs/database_maintenance.md`.
+
 To rebuild a completely empty local database volume:
 
 ```powershell

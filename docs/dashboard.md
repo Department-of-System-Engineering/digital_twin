@@ -11,6 +11,8 @@ all joins and chart pivoting happen in the backend.
   orders and KPI values.
 - `WS /ws/sensors/chart` serves live chart deltas in parallel with the
   historical REST query, so slow history loading cannot delay live updates.
+- `GET /process/products` and `WS /ws/process/products` provide current product
+  occupancy for the process graph.
 - A chart opens a WebSocket only when its `toDate` is close to the browser's
   current server-local time. The dashboard allows 90 seconds by default because
   manually selected `datetime-local` values may be minute-aligned.

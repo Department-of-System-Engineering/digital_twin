@@ -1,7 +1,12 @@
 import pytest
 from pydantic import ValidationError
 
-from app.dashboard.schemas import ChartRequest, OrderCreate, TrackingEventRequest
+from app.dashboard.schemas import (
+    ChartRequest,
+    OrderCreate,
+    StationTrackingEventRequest,
+    TrackingEventRequest,
+)
 from app.dashboard.service import _chart_query_start, _number_type
 
 
@@ -33,6 +38,24 @@ def test_chart_request_rejects_reversed_range() -> None:
                 },
             }
         )
+
+
+def test_station_tracking_event_uses_stable_keys() -> None:
+    event = StationTrackingEventRequest.model_validate(
+        {
+            "eventId": "visual-qc-return-42",
+            "productInstanceId": 42,
+            "orderItemId": 7,
+            "stationKey": "visual_qc",
+            "nextStationKey": "assembly2",
+            "state": "departed",
+            "time": "2026-09-24T12:34:56",
+        }
+    )
+
+    assert event.stationKey == "visual_qc"
+    assert event.productInstanceId == 42
+    assert event.nextStationKey == "assembly2"
 
 
 def test_chart_history_is_bounded_to_display_capacity(monkeypatch) -> None:

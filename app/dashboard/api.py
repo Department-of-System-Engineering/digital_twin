@@ -10,6 +10,7 @@ from sqlalchemy import bindparam, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import AsyncSessionLocal, get_async_session
+from ..maintenance.security import require_api_key
 from ..models import UserType
 from ..settings import settings
 from .schemas import (
@@ -22,14 +23,17 @@ from .schemas import (
     OrderCreate,
     OrderListItem,
     OrderOut,
+    ProcessStepProducts,
     ProductOut,
     SensorOut,
+    StationTrackingEventRequest,
     TrackingEventRequest,
     TrackingEventResult,
     TrayAssignmentRequest,
     TrayAssignmentResult,
 )
 from .service import (
+    add_station_tracking_event,
     add_tracking_event,
     assign_tray_to_next_product,
     cancel_order,
@@ -39,6 +43,7 @@ from .service import (
     get_order,
     get_process_assets,
     get_process_graph,
+    get_process_product_locations,
     get_sensor_details,
     list_kpis,
     list_orders,
@@ -71,6 +76,17 @@ async def process_graph(
     session: AsyncSession = Depends(get_async_session),
 ) -> Graph:
     return await get_process_graph(session)
+
+
+@router.get(
+    "/process/products",
+    response_model=list[ProcessStepProducts],
+    tags=["Production tracking"],
+)
+async def process_products(
+    session: AsyncSession = Depends(get_async_session),
+) -> list[ProcessStepProducts]:
+    return await get_process_product_locations(session)
 
 
 @router.get("/process/{process_id}", response_model=list[AssetOut], tags=["Process"])
@@ -198,6 +214,46 @@ async def track_product(
     session: AsyncSession = Depends(get_async_session),
 ) -> TrackingEventResult:
     return await add_tracking_event(session, product_instance_id, body)
+
+
+@router.post(
+    "/production/events",
+    response_model=TrackingEventResult,
+    tags=["Production tracking"],
+    dependencies=[Depends(require_api_key)],
+)
+async def station_tracking_event(
+    body: StationTrackingEventRequest,
+    session: AsyncSession = Depends(get_async_session),
+) -> TrackingEventResult:
+    return await add_station_tracking_event(session, body)
+
+
+@router.websocket("/ws/process/products")
+async def process_products_websocket(websocket: WebSocket) -> None:
+    """Stream complete process-step product occupancy snapshots."""
+
+    await websocket.accept()
+    previous: list[dict[str, Any]] | None = None
+    try:
+        while True:
+            async with AsyncSessionLocal() as session:
+                snapshot = await get_process_product_locations(session)
+            payload = [item.model_dump() for item in snapshot]
+            if payload != previous:
+                await websocket.send_json(payload)
+                previous = payload
+            try:
+                message = await asyncio.wait_for(
+                    websocket.receive(),
+                    timeout=settings.DASHBOARD_WS_POLL_INTERVAL_SECONDS,
+                )
+                if message["type"] == "websocket.disconnect":
+                    return
+            except TimeoutError:
+                pass
+    except WebSocketDisconnect:
+        return
 
 
 def _bucket_start(value: datetime, frequency: float) -> datetime:

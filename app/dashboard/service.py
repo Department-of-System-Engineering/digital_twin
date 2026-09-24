@@ -25,11 +25,14 @@ from .schemas import (
     OrderCreate,
     OrderListItem,
     OrderOut,
+    ProcessStepProducts,
     ProductOut,
     SensorOut,
+    StationTrackingEventRequest,
     TrackingEventRequest,
     TrackingEventResult,
     TrayAssignmentResult,
+    TrackedProduct,
 )
 
 
@@ -60,6 +63,7 @@ async def get_process_graph(session: AsyncSession) -> Graph:
         await session.execute(
             text(
                 "SELECT ps.process_step_id, ps.process_step_name, "
+                "min(a.asset_key) AS asset_key, "
                 "string_agg(DISTINCT COALESCE(a.asset_name, 'Asset ' || a.asset_id::text), "
                 "', ' ORDER BY COALESCE(a.asset_name, 'Asset ' || a.asset_id::text)) AS assets "
                 "FROM process_steps ps "
@@ -90,22 +94,114 @@ async def get_process_graph(session: AsyncSession) -> Graph:
         )
     ).mappings()
 
-    nodes = []
-    for row in node_rows:
-        name = str(row["process_step_name"])
-        if row["assets"]:
-            name = f"{name} - {row['assets']}"
-        nodes.append(GraphNode(id=str(row["process_step_id"]), name=name))
-
-    edges = [
-        GraphEdge(
-            id=str(row["routing_id"]),
-            source=str(row["process_step_id"]),
-            target=str(row["next_process_step_id"]),
-        )
-        for row in edge_rows
+    node_rows = list(node_rows)
+    preparation_ids = [
+        int(row["process_step_id"])
+        for row in node_rows
+        if row["asset_key"] == "preparation"
     ]
+    preparation_node_id = min(preparation_ids) if preparation_ids else None
+    aliases = {
+        int(row["process_step_id"]): (
+            preparation_node_id
+            if row["asset_key"] == "preparation" and preparation_node_id is not None
+            else int(row["process_step_id"])
+        )
+        for row in node_rows
+    }
+
+    nodes = []
+    emitted_node_ids: set[int] = set()
+    station_names = {
+        "assembly1": "Assembly 1 Station",
+        "assembly2": "Assembly 2 Station",
+        "visual_qc": "Visual QC Station",
+    }
+    for row in node_rows:
+        node_id = aliases[int(row["process_step_id"])]
+        if node_id in emitted_node_ids:
+            continue
+        emitted_node_ids.add(node_id)
+        name = str(row["process_step_name"])
+        if row["asset_key"] == "preparation":
+            name = "Base preparation - Preparation Station"
+        elif row["asset_key"] in station_names:
+            name = f"{name} - {station_names[row['asset_key']]}"
+        elif row["assets"]:
+            name = f"{name} - {row['assets']}"
+        nodes.append(GraphNode(id=str(node_id), name=name))
+
+    edges = []
+    emitted_edges: set[tuple[int, int]] = set()
+    for row in edge_rows:
+        source = aliases[int(row["process_step_id"])]
+        target = aliases[int(row["next_process_step_id"])]
+        if source == target or (source, target) in emitted_edges:
+            continue
+        emitted_edges.add((source, target))
+        edges.append(GraphEdge(id=f"{source}-{target}", source=str(source), target=str(target)))
     return Graph(nodes=nodes, edges=edges)
+
+
+async def get_process_product_locations(
+    session: AsyncSession,
+) -> list[ProcessStepProducts]:
+    rows = (
+        await session.execute(
+            text(
+                "WITH active_configuration AS ("
+                "SELECT process_configuration_id FROM process_configurations "
+                "WHERE is_active ORDER BY valid_from DESC LIMIT 1), "
+                "latest_event AS ("
+                "SELECT DISTINCT ON (pte.product_instance_id) "
+                "pte.product_instance_id, pte.process_step_id, "
+                "pte.next_process_step_id, pte.state "
+                "FROM product_tracking_events pte "
+                "ORDER BY pte.product_instance_id, pte.time DESC, "
+                "pte.product_tracking_event_id DESC), "
+                "route_choice AS ("
+                "SELECT r.process_step_id, count(*) AS route_count, "
+                "min(r.next_process_step_id) AS only_next_process_step_id "
+                "FROM routing r JOIN active_configuration ac "
+                "ON ac.process_configuration_id = r.process_configuration_id "
+                "GROUP BY r.process_step_id), "
+                "located AS ("
+                "SELECT le.product_instance_id, CASE WHEN le.state = 'departed' "
+                "THEN COALESCE(le.next_process_step_id, CASE "
+                "WHEN rc.route_count = 1 THEN rc.only_next_process_step_id END) "
+                "ELSE le.process_step_id END AS step_id "
+                "FROM latest_event le LEFT JOIN route_choice rc "
+                "ON rc.process_step_id = le.process_step_id), "
+                "display_alias AS ("
+                "SELECT aps.process_step_id, CASE WHEN a.asset_key = 'preparation' "
+                "THEN min(aps.process_step_id) OVER (PARTITION BY aps.process_configuration_id, aps.asset_id) "
+                "ELSE aps.process_step_id END AS display_step_id "
+                "FROM asset_process_steps aps JOIN assets a ON a.asset_id = aps.asset_id "
+                "JOIN active_configuration ac ON ac.process_configuration_id = aps.process_configuration_id) "
+                "SELECT COALESCE(da.display_step_id, l.step_id) AS process_step_id, "
+                "pi.product_instance_id, pt.product_type_name "
+                "FROM located l JOIN product_instances pi ON pi.product_instance_id = l.product_instance_id "
+                "JOIN order_items oi ON oi.order_item_id = pi.order_item_id "
+                "JOIN orders o ON o.order_id = oi.order_id "
+                "JOIN product_types pt ON pt.product_type_id = oi.product_type_id "
+                "LEFT JOIN display_alias da ON da.process_step_id = l.step_id "
+                "WHERE l.step_id IS NOT NULL AND o.status IN ('pending', 'in_progress') "
+                "ORDER BY process_step_id, pi.product_instance_id"
+            )
+        )
+    ).mappings()
+    grouped: dict[str, list[TrackedProduct]] = defaultdict(list)
+    for row in rows:
+        grouped[str(row["process_step_id"])].append(
+            TrackedProduct(
+                productInstanceId=int(row["product_instance_id"]),
+                productType=str(row["product_type_name"]),
+            )
+        )
+    return [
+        ProcessStepProducts(processStepId=step_id, products=products)
+        for step_id, products in grouped.items()
+    ]
 
 
 _SENSOR_DETAILS_SQL = text(
@@ -413,7 +509,7 @@ async def complete_order(session: AsyncSession, order_id: int) -> bool:
     unfinished_products = await session.scalar(
         select(func.count(ProductInstance.product_instance_id)).where(
             ProductInstance.order_item_id.in_(item_ids),
-            ProductInstance.status != "completed",
+            ProductInstance.status.notin_(["completed", "done"]),
         )
     )
     if int(unfinished_products or 0) > 0:
@@ -460,7 +556,7 @@ async def list_kpis(
 
 
 async def assign_tray_to_next_product(
-    session: AsyncSession, nfc_tag_id: str, order_id: int
+    session: AsyncSession, nfc_tag_id: str, order_id: int | None
 ) -> TrayAssignmentResult:
     normalized_tag = nfc_tag_id.strip().upper()
     if not normalized_tag:
@@ -485,18 +581,33 @@ async def assign_tray_to_next_product(
     if active_assignment is not None:
         raise HTTPException(status_code=409, detail="Tray already has an active product")
 
-    product = await session.scalar(
+    product_query = (
         select(ProductInstance)
         .join(OrderItem, OrderItem.order_item_id == ProductInstance.order_item_id)
-        .where(OrderItem.order_id == order_id, ProductInstance.status == "queued")
-        .order_by(OrderItem.position, ProductInstance.sequence_number)
+        .join(Order, Order.order_id == OrderItem.order_id)
+        .where(
+            ProductInstance.status == "queued",
+            Order.status.in_(["pending", "in_progress"]),
+        )
+    )
+    if order_id is not None:
+        product_query = product_query.where(OrderItem.order_id == order_id)
+    product = await session.scalar(
+        product_query.order_by(
+            Order.priority.desc(),
+            Order.order_date,
+            OrderItem.position,
+            ProductInstance.sequence_number,
+        )
         .with_for_update(skip_locked=True)
         .limit(1)
     )
     if product is None:
-        raise HTTPException(status_code=409, detail="Order has no unassigned product")
+        raise HTTPException(status_code=409, detail="No queued product is available")
 
-    order = await session.get(Order, order_id)
+    item = await session.get(OrderItem, product.order_item_id)
+    assert item is not None
+    order = await session.get(Order, item.order_id)
     if order is None or order.status not in {"pending", "in_progress"}:
         raise HTTPException(status_code=409, detail="Order is not active")
 
@@ -511,13 +622,36 @@ async def assign_tray_to_next_product(
         trayId=tray.tray_id,
         nfcTagId=tray.nfc_tag_id,
         productInstanceId=product.product_instance_id,
-        orderId=order_id,
+        orderItemId=item.order_item_id,
+        orderId=order.order_id,
     )
 
 
 async def add_tracking_event(
-    session: AsyncSession, product_instance_id: int, body: TrackingEventRequest
+    session: AsyncSession,
+    product_instance_id: int,
+    body: TrackingEventRequest,
+    next_process_step_id: int | None = None,
 ) -> TrackingEventResult:
+    if body.externalEventId is not None:
+        existing = await session.scalar(
+            select(ProductTrackingEvent).where(
+                ProductTrackingEvent.external_event_id == body.externalEventId
+            )
+        )
+        if existing is not None:
+            if existing.product_instance_id != product_instance_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail="External event ID already belongs to another product",
+                )
+            return TrackingEventResult(
+                eventId=existing.product_tracking_event_id,
+                productInstanceId=existing.product_instance_id,
+                state=existing.state,
+                time=existing.time,
+            )
+
     product = await session.scalar(
         select(ProductInstance)
         .where(ProductInstance.product_instance_id == product_instance_id)
@@ -525,7 +659,7 @@ async def add_tracking_event(
     )
     if product is None:
         raise HTTPException(status_code=404, detail="Product instance not found")
-    if product.status in {"completed", "cancelled"}:
+    if product.status in {"completed", "done", "cancelled"}:
         raise HTTPException(status_code=409, detail="Product is already terminal")
 
     assignment = await session.scalar(
@@ -541,15 +675,17 @@ async def add_tracking_event(
     event = ProductTrackingEvent(
         product_instance_id=product_instance_id,
         process_step_id=body.processStepId,
+        next_process_step_id=next_process_step_id,
         asset_id=body.assetId,
         tray_id=assignment.tray_id,
         time=event_time,
         state=body.state,
+        external_event_id=body.externalEventId,
     )
     session.add(event)
 
     if body.state == "done":
-        product.status = "completed"
+        product.status = "done"
         product.completed_at = event_time
         assignment.released_at = event_time
         item = await session.get(OrderItem, product.order_item_id)
@@ -557,7 +693,7 @@ async def add_tracking_event(
         completed_count = await session.scalar(
             select(func.count(ProductInstance.product_instance_id)).where(
                 ProductInstance.order_item_id == item.order_item_id,
-                ProductInstance.status == "completed",
+                ProductInstance.status.in_(["completed", "done"]),
             )
         )
         # The current product is already marked completed in this session.
@@ -585,3 +721,133 @@ async def add_tracking_event(
     )
     await session.commit()
     return result
+
+
+async def add_station_tracking_event(
+    session: AsyncSession, body: StationTrackingEventRequest
+) -> TrackingEventResult:
+    if body.nextStationKey is not None and (
+        body.stationKey != "visual_qc" or body.state != "departed"
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="nextStationKey is only valid for a visual_qc departed event",
+        )
+
+    product = await session.get(ProductInstance, body.productInstanceId)
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product instance not found")
+    if product.order_item_id != body.orderItemId:
+        raise HTTPException(
+            status_code=409,
+            detail="orderItemId does not belong to productInstanceId",
+        )
+
+    if body.state == "done":
+        station_key = "warehouse"
+        descending = True
+    else:
+        station_key = body.stationKey
+        descending = body.state == "departed"
+
+    order_direction = "DESC" if descending else "ASC"
+    location = (
+        await session.execute(
+            text(
+                "SELECT ps.process_step_id, a.asset_id "
+                "FROM process_configurations pc "
+                "JOIN asset_process_steps aps ON aps.process_configuration_id = pc.process_configuration_id "
+                "JOIN assets a ON a.asset_id = aps.asset_id "
+                "JOIN process_steps ps ON ps.process_step_id = aps.process_step_id "
+                "WHERE pc.is_active AND a.asset_key = :station_key "
+                f"ORDER BY ps.process_step_id {order_direction} LIMIT 1"
+            ),
+            {"station_key": station_key},
+        )
+    ).mappings().first()
+    if location is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Station is not mapped in the active process: {station_key}",
+        )
+
+    next_process_step_id: int | None = None
+    if body.state == "departed":
+        source_step_id = int(location["process_step_id"])
+        if body.nextStationKey is not None:
+            route = (
+                await session.execute(
+                    text(
+                        "WITH RECURSIVE active_configuration AS ("
+                        "SELECT process_configuration_id FROM process_configurations "
+                        "WHERE is_active ORDER BY valid_from DESC LIMIT 1), "
+                        "paths(step_id, first_hop, depth, visited) AS ("
+                        "SELECT r.next_process_step_id, r.next_process_step_id, 1, "
+                        "ARRAY[r.process_step_id, r.next_process_step_id] "
+                        "FROM routing r JOIN active_configuration ac "
+                        "ON ac.process_configuration_id = r.process_configuration_id "
+                        "WHERE r.process_step_id = :source_step_id "
+                        "UNION ALL "
+                        "SELECT r.next_process_step_id, p.first_hop, p.depth + 1, "
+                        "p.visited || r.next_process_step_id "
+                        "FROM paths p JOIN routing r ON r.process_step_id = p.step_id "
+                        "JOIN active_configuration ac "
+                        "ON ac.process_configuration_id = r.process_configuration_id "
+                        "WHERE p.depth < 20 "
+                        "AND NOT r.next_process_step_id = ANY(p.visited)) "
+                        "SELECT p.first_hop FROM paths p "
+                        "JOIN active_configuration ac ON TRUE "
+                        "JOIN asset_process_steps aps "
+                        "ON aps.process_configuration_id = ac.process_configuration_id "
+                        "AND aps.process_step_id = p.step_id "
+                        "JOIN assets a ON a.asset_id = aps.asset_id "
+                        "WHERE a.asset_key = :next_station_key "
+                        "ORDER BY p.depth LIMIT 1"
+                    ),
+                    {
+                        "source_step_id": source_step_id,
+                        "next_station_key": body.nextStationKey,
+                    },
+                )
+            ).mappings().first()
+            if route is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "No route exists from the current station to "
+                        f"{body.nextStationKey}"
+                    ),
+                )
+            next_process_step_id = int(route["first_hop"])
+        else:
+            routes = (
+                await session.execute(
+                    text(
+                        "SELECT r.next_process_step_id FROM routing r "
+                        "JOIN process_configurations pc "
+                        "ON pc.process_configuration_id = r.process_configuration_id "
+                        "WHERE pc.is_active AND r.process_step_id = :source_step_id "
+                        "ORDER BY r.next_process_step_id"
+                    ),
+                    {"source_step_id": source_step_id},
+                )
+            ).scalars().all()
+            if len(routes) != 1:
+                raise HTTPException(
+                    status_code=422,
+                    detail="nextStationKey is required when the route has multiple branches",
+                )
+            next_process_step_id = int(routes[0])
+
+    return await add_tracking_event(
+        session,
+        body.productInstanceId,
+        TrackingEventRequest(
+            state=body.state,
+            processStepId=int(location["process_step_id"]),
+            assetId=int(location["asset_id"]),
+            time=body.time,
+            externalEventId=body.eventId,
+        ),
+        next_process_step_id=next_process_step_id,
+    )

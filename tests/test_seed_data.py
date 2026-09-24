@@ -20,7 +20,7 @@ def test_packaged_seed_workbook_is_valid() -> None:
     assert len(seed.rows("SensorTypes")) == 5
     assert len(seed.rows("Sensors")) == 17
     assert len(seed.rows("ProcessSteps")) == 10
-    assert len(seed.rows("Routing")) == 9
+    assert len(seed.rows("Routing")) == 11
 
 
 def test_future_external_identifier_columns_are_present() -> None:
@@ -83,8 +83,8 @@ def test_complete_workbook_can_be_planned_for_import() -> None:
     result = import_seed_workbook(connection, seed)  # type: ignore[arg-type]
 
     sql = "\n".join(statement for statement, _ in connection.statements)
-    assert result.total_rows == 75
+    assert result.total_rows == 77
     assert sql.count("INSERT INTO public.asset_process_steps") == 10
-    assert sql.count("INSERT INTO public.routing") == 9
+    assert sql.count("INSERT INTO public.routing") == 11
     assert "COALESCE(EXCLUDED.cmms_asset_id, assets.cmms_asset_id)" in sql
     assert "ALTER COLUMN data_source_id" in sql

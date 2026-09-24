@@ -1,5 +1,6 @@
 import enum
 from datetime import datetime
+from uuid import UUID as UUIDValue
 
 from sqlalchemy import (
     JSON,
@@ -20,6 +21,7 @@ from sqlalchemy import (
     text
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 
 class Base(DeclarativeBase):
@@ -502,7 +504,7 @@ class ProductInstance(Base):
         ),
         CheckConstraint("sequence_number > 0", name="ck_product_instances_sequence"),
         CheckConstraint(
-            "status IN ('queued', 'assigned', 'in_progress', 'completed', 'cancelled')",
+            "status IN ('queued', 'assigned', 'in_progress', 'completed', 'cancelled', 'done', 'rework')",
             name="ck_product_instances_status",
         ),
     )
@@ -565,12 +567,18 @@ class ProductTrackingEvent(Base):
     process_step_id: Mapped[int | None] = mapped_column(
         ForeignKey("process_steps.process_step_id"), nullable=True
     )
+    next_process_step_id: Mapped[int | None] = mapped_column(
+        ForeignKey("process_steps.process_step_id"), nullable=True
+    )
     asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.asset_id"), nullable=True)
     tray_id: Mapped[int | None] = mapped_column(ForeignKey("trays.tray_id"), nullable=True)
     time: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now, server_default=text("CURRENT_TIMESTAMP")
     )
     state: Mapped[str] = mapped_column(String(16), nullable=False)
+    external_event_id: Mapped[str | None] = mapped_column(
+        String(200), nullable=True, unique=True
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -583,6 +591,120 @@ class ProductTrackingEvent(Base):
             "time",
         ),
     )
+
+
+class QcVariantMapping(Base):
+    __tablename__ = "qc_variant_mapping"
+
+    product_type_id: Mapped[int] = mapped_column(
+        ForeignKey("product_types.product_type_id"), primary_key=True
+    )
+    variant: Mapped[str] = mapped_column(String(1), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "variant IN ('A', 'B', 'C', 'D')",
+            name="ck_qc_variant_mapping_variant",
+        ),
+    )
+
+
+class QcJob(Base):
+    __tablename__ = "qc_jobs"
+
+    inspection_id: Mapped[UUIDValue] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    arrival_event_id: Mapped[int] = mapped_column(
+        ForeignKey("product_tracking_events.product_tracking_event_id"),
+        nullable=False,
+        unique=True,
+    )
+    product_instance_id: Mapped[int] = mapped_column(
+        ForeignKey("product_instances.product_instance_id"), nullable=False
+    )
+    order_id: Mapped[int] = mapped_column(
+        ForeignKey("orders.order_id"), nullable=False
+    )
+    expected_variant: Mapped[str] = mapped_column(String(1), nullable=False)
+    station_id: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.now, server_default=text("CURRENT_TIMESTAMP")
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cancel_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "expected_variant IN ('A', 'B', 'C', 'D')",
+            name="ck_qc_jobs_expected_variant",
+        ),
+        Index(
+            "qc_one_active_job_per_station",
+            "station_id",
+            unique=True,
+            postgresql_where=text("finished_at IS NULL"),
+        ),
+    )
+
+
+class QcInspection(Base):
+    __tablename__ = "qc_inspections"
+
+    inspection_id: Mapped[UUIDValue] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    product_instance_id: Mapped[int | None] = mapped_column(
+        ForeignKey("product_instances.product_instance_id"), nullable=True
+    )
+    order_id: Mapped[int | None] = mapped_column(
+        ForeignKey("orders.order_id"), nullable=True
+    )
+    mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    station_id: Mapped[str] = mapped_column(Text, nullable=False)
+    expected_variant: Mapped[str | None] = mapped_column(String(1), nullable=True)
+    detected_variant: Mapped[str | None] = mapped_column(String(1), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.now, server_default=text("CURRENT_TIMESTAMP")
+    )
+    calibration_id: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("mode IN ('manual', 'order')", name="ck_qc_inspections_mode"),
+        CheckConstraint(
+            "expected_variant IS NULL OR expected_variant IN ('A', 'B', 'C', 'D')",
+            name="ck_qc_inspections_expected_variant",
+        ),
+        CheckConstraint(
+            "detected_variant IS NULL OR detected_variant IN ('A', 'B', 'C', 'D')",
+            name="ck_qc_inspections_detected_variant",
+        ),
+        CheckConstraint(
+            "status IN ('PASS', 'FAIL', 'INCONCLUSIVE')",
+            name="ck_qc_inspections_status",
+        ),
+        CheckConstraint(
+            "quality_score IS NULL OR quality_score BETWEEN 0 AND 100",
+            name="ck_qc_inspections_quality_score",
+        ),
+        Index("qc_inspections_product", "product_instance_id", "completed_at"),
+    )
+
+
+class QcFinding(Base):
+    __tablename__ = "qc_findings"
+
+    finding_id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    inspection_id: Mapped[UUIDValue] = mapped_column(
+        ForeignKey("qc_inspections.inspection_id"), nullable=False
+    )
+    code: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    part: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sample_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    metrics: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+    __table_args__ = (Index("qc_findings_inspection", "inspection_id"),)
 
 
 class KpiDefinition(Base):

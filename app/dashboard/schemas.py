@@ -33,6 +33,16 @@ class Graph(BaseModel):
     edges: list[GraphEdge]
 
 
+class TrackedProduct(BaseModel):
+    productInstanceId: int
+    productType: str
+
+
+class ProcessStepProducts(BaseModel):
+    processStepId: str
+    products: list[TrackedProduct]
+
+
 class SensorOut(BaseModel):
     id: int
     name: str
@@ -121,13 +131,14 @@ class BaseMetric(BaseModel):
 
 
 class TrayAssignmentRequest(BaseModel):
-    orderId: int = Field(gt=0)
+    orderId: int | None = Field(default=None, gt=0)
 
 
 class TrayAssignmentResult(BaseModel):
     trayId: int
     nfcTagId: str
     productInstanceId: int
+    orderItemId: int
     orderId: int
 
 
@@ -135,6 +146,17 @@ class TrackingEventRequest(BaseModel):
     state: Literal["arrived", "departed", "done"]
     processStepId: int | None = Field(default=None, gt=0)
     assetId: int | None = Field(default=None, gt=0)
+    time: datetime | None = None
+    externalEventId: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class StationTrackingEventRequest(BaseModel):
+    eventId: str = Field(min_length=1, max_length=200)
+    productInstanceId: int = Field(gt=0)
+    orderItemId: int = Field(gt=0)
+    stationKey: str = Field(pattern=r"^[a-z0-9_-]+$")
+    nextStationKey: Literal["assembly1", "assembly2"] | None = None
+    state: Literal["arrived", "departed", "done"]
     time: datetime | None = None
 
 
