@@ -123,6 +123,73 @@ class QCApiTests(unittest.TestCase):
         with self.connect() as db:
             return db.execute(query).fetchone()
 
+    def direct_setup(self):
+        with self.connect() as db:
+            db.execute("DELETE FROM product_tracking_events")
+            db.execute("DELETE FROM tray_product_assignments")
+            db.execute("UPDATE product_instances SET status='queued'")
+            db.execute("UPDATE orders SET status='pending'")
+            db.execute("ALTER TABLE orders ADD COLUMN priority boolean DEFAULT false, ADD COLUMN order_date timestamp DEFAULT localtimestamp")
+            db.execute("ALTER TABLE order_items ADD COLUMN position int DEFAULT 1")
+            db.execute("ALTER TABLE product_instances ADD COLUMN sequence_number int DEFAULT 1")
+
+    def direct_claim(self):
+        response = self.client.post('/qc/claim', json={'station_id':'qc-1','product_present':True})
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def test_direct_arrival_completes_unstarted_order_without_tray(self):
+        self.direct_setup()
+        self.assertIsNone(self.claim())  # camera presence is required
+        job = self.direct_claim()
+        self.assertEqual(self.direct_claim()['inspection_id'],job['inspection_id'])
+        self.assertEqual(job['expected_variant'],'A')
+        self.assertEqual(self.query("SELECT count(*) AS n FROM product_tracking_events")['n'],1)
+        event = self.event()
+        self.assertEqual(event['inspection_id'],job['inspection_id'])
+        self.assertEqual(self.post(event).status_code,200)
+        self.assertTrue(self.post(event).json()['duplicate'])
+        self.assertEqual(self.query("SELECT status FROM product_instances")['status'],'done')
+        self.assertEqual(self.query("SELECT status FROM orders")['status'],'completed')
+        self.assertEqual(self.query("SELECT completed_quantity FROM order_items")['completed_quantity'],1)
+        self.assertIsNone(self.direct_claim())
+
+    def test_direct_wrong_variant_and_fail_do_not_complete_order(self):
+        self.direct_setup()
+        self.direct_claim()
+        event = self.event()
+        event['result']['detected_variant']='B'
+        self.assertEqual(self.post(event).status_code,422)
+        event['result']['status']='FAIL'
+        self.assertEqual(self.post(event).status_code,200)
+        self.assertEqual(self.query("SELECT status FROM product_instances")['status'],'rework')
+        self.assertEqual(self.query("SELECT completed_quantity FROM order_items")['completed_quantity'],0)
+        retry = self.direct_claim()
+        self.assertNotEqual(retry['inspection_id'],event['inspection_id'])
+        self.assertEqual(retry['product_instance_id'],event['product_instance_id'])
+
+    def test_direct_inconclusive_can_be_reinspected(self):
+        self.direct_setup()
+        job = self.direct_claim()
+        self.assertEqual(self.post(self.event('INCONCLUSIVE')).status_code,200)
+        self.assertNotEqual(self.direct_claim()['inspection_id'],job['inspection_id'])
+
+    def test_direct_arrival_counts_one_unit_at_a_time(self):
+        self.direct_setup()
+        with self.connect() as db:
+            db.execute("UPDATE order_items SET requested_quantity=2")
+            db.execute("INSERT INTO product_instances(product_instance_id,order_item_id,status,sequence_number) VALUES(2,1,'queued',2)")
+        self.direct_claim()
+        self.assertEqual(self.post(self.event()).status_code,200)
+        self.assertEqual(self.query("SELECT status FROM orders")['status'],'in_progress')
+        job = self.direct_claim()
+        event = self.event()
+        event['product_instance_id']=job['product_instance_id']
+        self.assertEqual(job['product_instance_id'],2)
+        self.assertEqual(self.post(event).status_code,200)
+        self.assertEqual(self.query("SELECT completed_quantity FROM order_items")['completed_quantity'],2)
+        self.assertEqual(self.query("SELECT status FROM orders")['status'],'completed')
+
     def claim(self, station="qc-1"):
         response = self.client.post("/qc/claim", json={"station_id": station})
         self.assertEqual(response.status_code, 200, response.text)

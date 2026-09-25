@@ -36,6 +36,7 @@ def connect():
 class Claim(BaseModel):
     model_config = ConfigDict(extra="forbid")
     station_id: str = Field(min_length=1, max_length=100)
+    product_present: bool = False
 
 
 class Cancel(BaseModel):
@@ -83,6 +84,54 @@ def current_arrival(db, product_id, arrival_id):
     return latest
 
 
+
+def claim_direct_arrival(db, station_id):
+    """Bind a camera arrival to the next order unit without inventing production."""
+    row = db.execute("""
+      SELECT p.product_instance_id,i.order_id,m.variant
+      FROM product_instances p JOIN order_items i USING(order_item_id)
+      JOIN orders o USING(order_id)
+      LEFT JOIN qc_variant_mapping m ON m.product_type_id=i.product_type_id
+      WHERE o.status IN ('pending','in_progress')
+        AND i.completed_quantity < i.requested_quantity
+        AND (p.status='queued' OR (p.status IN ('rework','in_progress') AND
+          EXISTS (SELECT 1 FROM product_tracking_events e
+            WHERE e.product_instance_id=p.product_instance_id
+              AND e.external_event_id LIKE 'qc-direct:%%'
+              AND e.state='arrived'
+              AND e.product_tracking_event_id=(SELECT t.product_tracking_event_id
+                FROM product_tracking_events t WHERE t.product_instance_id=p.product_instance_id
+                ORDER BY t.time DESC,t.product_tracking_event_id DESC LIMIT 1))))
+        AND NOT EXISTS (SELECT 1 FROM tray_product_assignments t
+          WHERE t.product_instance_id=p.product_instance_id AND t.released_at IS NULL)
+        AND NOT EXISTS (SELECT 1 FROM qc_jobs j
+          WHERE j.product_instance_id=p.product_instance_id AND j.finished_at IS NULL)
+      ORDER BY o.priority DESC,o.order_date,o.order_id,i.position,p.sequence_number,p.product_instance_id
+      LIMIT 1 FOR UPDATE OF p,o
+    """).fetchone()
+    if not row:
+        return None
+    if row['variant'] is None:
+        raise HTTPException(422, "Product type has no qc_variant_mapping")
+    location = db.execute("""SELECT aps.process_step_id,aps.asset_id FROM asset_process_steps aps
+      JOIN process_configurations pc USING(process_configuration_id) JOIN assets a USING(asset_id)
+      WHERE pc.is_active AND a.asset_key='visual_qc' ORDER BY aps.process_step_id LIMIT 1""").fetchone()
+    if not location:
+        raise HTTPException(422, "visual_qc not mapped in active process")
+    identifier = uuid4()
+    arrival = db.execute("""INSERT INTO product_tracking_events
+      (product_instance_id,process_step_id,asset_id,state,external_event_id)
+      VALUES (%s,%s,%s,'arrived',%s) RETURNING product_tracking_event_id""",
+      (row['product_instance_id'],location['process_step_id'],location['asset_id'],
+       'qc-direct:'+str(identifier))).fetchone()
+    db.execute("UPDATE product_instances SET status='in_progress' WHERE product_instance_id=%s",
+               (row['product_instance_id'],))
+    return db.execute("""INSERT INTO qc_jobs
+      (inspection_id,arrival_event_id,product_instance_id,order_id,expected_variant,station_id)
+      VALUES (%s,%s,%s,%s,%s,%s) RETURNING *""", (identifier,
+      arrival['product_tracking_event_id'],row['product_instance_id'],row['order_id'],row['variant'],station_id)).fetchone()
+
+
 @router.post("/qc/claim", dependencies=[Depends(require_api_key)])
 def claim(body: Claim):
     with connect() as db:
@@ -111,7 +160,7 @@ def claim(body: Claim):
           ORDER BY e.time,e.product_tracking_event_id LIMIT 2
         """).fetchall()
         if not rows:
-            return None
+            return claim_direct_arrival(db, body.station_id) if body.product_present else None
         if len(rows) != 1:
             raise HTTPException(409, "Multiple products at visual_qc; resolve tracking ambiguity")
         row = rows[0]
@@ -154,7 +203,10 @@ def accept(db, body, payload):
             raise HTTPException(409, "Order is no longer active")
         arrival = current_arrival(db, body.product_instance_id, body.arrival_event_id)
         tray = db.execute("SELECT * FROM tray_product_assignments WHERE product_instance_id=%s AND released_at IS NULL FOR UPDATE", (body.product_instance_id,)).fetchone()
-        if not tray or arrival["tray_id"] != tray["tray_id"]:
+        direct = arrival.get('external_event_id') == 'qc-direct:'+str(body.inspection_id)
+        if direct and (tray or arrival['tray_id'] is not None):
+            raise HTTPException(409, "Direct QC product acquired a tray; inspect tracking")
+        if not direct and (not tray or arrival["tray_id"] != tray["tray_id"]):
             raise HTTPException(409, "QC arrival does not match active tray")
         if body.result.status == "PASS" and body.result.detected_variant != body.expected_variant:
             raise HTTPException(422, "PASS requires the expected variant")
@@ -181,13 +233,14 @@ def accept(db, body, payload):
             if not location:
                 raise HTTPException(422, "Warehouse not mapped in active process")
             # Use the twin database clock (its timestamps are naive), never the Pi clock.
-            done_time = db.execute("SELECT GREATEST(localtimestamp,%s::timestamp,%s::timestamp) AS t", (arrival["time"],tray["assigned_at"])).fetchone()["t"]
+            done_time = db.execute("SELECT GREATEST(localtimestamp,%s::timestamp,%s::timestamp) AS t", (arrival["time"],tray["assigned_at"] if tray else arrival["time"])).fetchone()["t"]
             db.execute("UPDATE product_instances SET status='done',completed_at=%s WHERE product_instance_id=%s", (done_time,body.product_instance_id))
-            db.execute("UPDATE tray_product_assignments SET released_at=%s WHERE tray_product_assignment_id=%s", (done_time,tray["tray_product_assignment_id"]))
+            if tray:
+                db.execute("UPDATE tray_product_assignments SET released_at=%s WHERE tray_product_assignment_id=%s", (done_time,tray["tray_product_assignment_id"]))
             db.execute("""INSERT INTO product_tracking_events
               (product_instance_id,process_step_id,asset_id,tray_id,time,state,external_event_id)
               VALUES (%s,%s,%s,%s,%s,'done',%s)""", (body.product_instance_id,location["process_step_id"],
-              location["asset_id"],tray["tray_id"],done_time,"qc:"+str(body.inspection_id)))
+              location["asset_id"],tray["tray_id"] if tray else None,done_time,"qc:"+str(body.inspection_id)))
             db.execute("""UPDATE order_items SET completed_quantity=(SELECT count(*) FROM product_instances
               WHERE order_item_id=%s AND status IN ('done','completed')) WHERE order_item_id=%s""",
               (product["order_item_id"],product["order_item_id"]))
