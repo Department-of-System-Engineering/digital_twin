@@ -82,8 +82,11 @@ indexes guarantee that a tray and a product have at most one active assignment.
 4. closes the active tray assignment;
 5. completes the order when all its products are done.
 
-The dashboard's order-completion endpoint refuses completion while any physical
-product lacks a `done` event.
+`POST /orders/{order_id}/complete` is an explicit manual override. It sets every
+order item's completed quantity to its requested quantity, marks all product
+instances as completed, releases their active tray assignments, and changes the
+order status to `completed` in one transaction. It does not fabricate physical
+`done` tracking events.
 
 ## Data sources
 

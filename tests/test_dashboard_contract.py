@@ -1,3 +1,6 @@
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 import pytest
 from pydantic import ValidationError
 
@@ -7,7 +10,7 @@ from app.dashboard.schemas import (
     StationTrackingEventRequest,
     TrackingEventRequest,
 )
-from app.dashboard.service import _chart_query_start, _number_type
+from app.dashboard.service import _chart_query_start, _number_type, complete_order
 
 
 def test_chart_request_preserves_dashboard_contract_and_deduplicates_sensors() -> None:
@@ -91,3 +94,22 @@ def test_dashboard_number_types_are_derived_without_changing_sensor_output() -> 
 def test_done_is_a_supported_terminal_tracking_event() -> None:
     event = TrackingEventRequest.model_validate({"state": "done"})
     assert event.state == "done"
+
+
+@pytest.mark.asyncio
+async def test_manual_order_completion_closes_all_related_work() -> None:
+    order = SimpleNamespace(status="in_progress")
+    session = AsyncMock()
+    session.get.return_value = order
+
+    assert await complete_order(session, 42) is True
+
+    statements = [call.args[0] for call in session.execute.await_args_list]
+    assert [statement.table.name for statement in statements] == [
+        "order_items",
+        "product_instances",
+        "tray_product_assignments",
+    ]
+    assert order.status == "completed"
+    session.scalar.assert_not_awaited()
+    session.commit.assert_awaited_once()

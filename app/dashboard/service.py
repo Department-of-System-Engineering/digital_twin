@@ -505,18 +505,36 @@ async def complete_order(session: AsyncSession, order_id: int) -> bool:
     order = await session.get(Order, order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="Order not found")
+    if order.status == "cancelled":
+        raise HTTPException(status_code=409, detail="Cancelled order cannot be completed")
+
+    now = datetime.now()
     item_ids = select(OrderItem.order_item_id).where(OrderItem.order_id == order_id)
-    unfinished_products = await session.scalar(
-        select(func.count(ProductInstance.product_instance_id)).where(
-            ProductInstance.order_item_id.in_(item_ids),
-            ProductInstance.status.notin_(["completed", "done"]),
+    product_ids = select(ProductInstance.product_instance_id).where(
+        ProductInstance.order_item_id.in_(item_ids)
+    )
+
+    await session.execute(
+        update(OrderItem)
+        .where(OrderItem.order_id == order_id)
+        .values(completed_quantity=OrderItem.requested_quantity)
+    )
+    await session.execute(
+        update(ProductInstance)
+        .where(ProductInstance.order_item_id.in_(item_ids))
+        .values(
+            status="completed",
+            completed_at=func.coalesce(ProductInstance.completed_at, now),
         )
     )
-    if int(unfinished_products or 0) > 0:
-        raise HTTPException(
-            status_code=409,
-            detail="Order cannot be completed before every product has a done event",
+    await session.execute(
+        update(TrayProductAssignment)
+        .where(
+            TrayProductAssignment.product_instance_id.in_(product_ids),
+            TrayProductAssignment.released_at.is_(None),
         )
+        .values(released_at=now)
+    )
     order.status = "completed"
     await session.commit()
     return True
