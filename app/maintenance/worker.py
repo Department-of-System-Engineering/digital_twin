@@ -20,7 +20,7 @@ from .job_queue import (_is_admin_shutdown_error, claim_one_job, job_heartbeat, 
 
 # !!Predikciós modul importálása
 from .prediction_config import prediction_config
-from prediction_module.core import run_prediction
+from prediction_module.core import run_prediction, run_prediction_mock
 
 setup_logging()
 
@@ -303,8 +303,11 @@ def process_job(session: Session, job: PredictionJob) -> None:
         #                            delta_sampling=prediction_config.delta_sampling, delta_horizon=prediction_config.delta_horizon)
 
         # !! predikciós modul meghívása
-        prediction_result = run_prediction(asset_id=sync_result.asset_id, job_id=job_id, operation_template_dict=sync_result.asset_failure_cause_operations, failure_start_time=workorder.failure_date,
-                                           maintenance_end_time=workorder.ended, delta_horizon=prediction_config.delta_horizon, delta_sampling=prediction_config.delta_sampling, session=session)
+        # prediction_result = run_prediction(asset_id=sync_result.asset_id, job_id=job_id, operation_template_dict=sync_result.asset_failure_cause_operations, failure_start_time=workorder.failure_date,
+        #                                   maintenance_end_time=workorder.ended, delta_horizon=prediction_config.delta_horizon, delta_sampling=prediction_config.delta_sampling, session=session)
+
+        failure_type_ids_dummy = ['9', '10', '11']
+        prediction_result = run_prediction_mock(failure_type_ids_dummy)
 
         (prediction_id, failure_type_ids, failure_type_probabilities, predicted_reliability) = validate_prediction_result(prediction_result=prediction_result)
 

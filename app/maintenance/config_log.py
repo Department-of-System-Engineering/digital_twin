@@ -26,7 +26,7 @@ def setup_logging() -> None:
                 "class": "logging.StreamHandler",
                 "stream": "ext://sys.stdout",
                 "formatter": "detailed",
-                "level": "INFO"
+                "level": "DEBUG"
             },
             "file_handler": {
                 "class": "logging.handlers.TimedRotatingFileHandler",

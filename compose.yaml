@@ -23,7 +23,7 @@ x-app-service: &app-service
     context: .
     dockerfile: Dockerfile
     additional_contexts:
-      prediction_module_src: ${PREDICTION_MODULE_PATH:-/home/dt/pundit-prediction-module}
+      prediction_module_src: ${PREDICTION_MODULE_PATH:-/home/halasz/pundit-prediction-module}
   environment: *app-environment
   init: true
 
