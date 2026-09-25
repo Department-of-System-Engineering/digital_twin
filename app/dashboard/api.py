@@ -4,7 +4,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from sqlalchemy import bindparam, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -240,6 +240,38 @@ async def process_products_websocket(websocket: WebSocket) -> None:
             async with AsyncSessionLocal() as session:
                 snapshot = await get_process_product_locations(session)
             payload = [item.model_dump() for item in snapshot]
+            if payload != previous:
+                await websocket.send_json(payload)
+                previous = payload
+            try:
+                message = await asyncio.wait_for(
+                    websocket.receive(),
+                    timeout=settings.DASHBOARD_WS_POLL_INTERVAL_SECONDS,
+                )
+                if message["type"] == "websocket.disconnect":
+                    return
+            except TimeoutError:
+                pass
+    except WebSocketDisconnect:
+        return
+
+
+@router.websocket("/ws/orders/current")
+async def current_order_websocket(websocket: WebSocket) -> None:
+    """Stream the current order whenever quantities or order state change."""
+
+    await websocket.accept()
+    previous: dict[str, Any] | None | object = object()
+    try:
+        while True:
+            async with AsyncSessionLocal() as session:
+                try:
+                    current = await get_order(session)
+                    payload: dict[str, Any] | None = current.model_dump()
+                except HTTPException as exc:
+                    if exc.status_code != 404:
+                        raise
+                    payload = None
             if payload != previous:
                 await websocket.send_json(payload)
                 previous = payload

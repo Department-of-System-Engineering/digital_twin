@@ -112,6 +112,7 @@ The dashboard endpoints are:
 - `POST /orders/add`
 - `GET /orders/completed`
 - `GET /orders/current`
+- `WS /ws/orders/current`
 - `GET /orders/{order_id}`
 - `DELETE /orders/{order_id}/delete`
 - `POST /orders/{order_id}/complete`
