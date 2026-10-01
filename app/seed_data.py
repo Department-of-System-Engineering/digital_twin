@@ -112,6 +112,90 @@ SHEET_SPECS: dict[str, SheetSpec] = {
         ("configuration_key", "process_step_key", "next_process_step_key"),
         "configuration_key",
     ),
+    "FailureTypes": SheetSpec(
+        (
+            "failure_type_key",
+            "failure_type_id",
+            "failure_type_name",
+            "is_preventive",
+            "failure_cause_id",
+        ),
+        "failure_type_key",
+    ),
+    "AssetFailureTypes": SheetSpec(
+        (
+            "asset_failure_type_key",
+            "asset_failure_type_id",
+            "asset_key",
+            "failure_type_key",
+            "default_occurrence_probability",
+            "severity",
+            "asset_failurecause_id",
+        ),
+        "asset_failure_type_key",
+    ),
+    "SensorFailureTypes": SheetSpec(
+        ("sensor_failure_type_key", "sensor_key", "failure_type_key"),
+        "sensor_failure_type_key",
+    ),
+    "SensorStatistics": SheetSpec(
+        (
+            "sensor_statistic_key",
+            "sensor_key",
+            "standard_deviation_value",
+            "average_value",
+            "learning_time",
+        ),
+        "sensor_statistic_key",
+    ),
+    "Measurements": SheetSpec(
+        ("measurement_key", "sensor_key", "time", "value", "source_key"),
+        "measurement_key",
+    ),
+    "EtaBetas": SheetSpec(
+        (
+            "eta_beta_key",
+            "asset_failure_type_key",
+            "eta_value",
+            "beta_value",
+            "learning_time",
+        ),
+        "eta_beta_key",
+    ),
+    "Gammas": SheetSpec(
+        (
+            "gamma_key",
+            "sensor_failure_type_key",
+            "gamma_value",
+            "contribution",
+            "learning_time",
+        ),
+        "gamma_key",
+    ),
+    "AssetWorksheetLists": SheetSpec(
+        (
+            "asset_worksheet_key",
+            "asset_worksheet_list_id",
+            "asset_key",
+            "maintenance_end_date",
+            "source_sys_time",
+            "asset_failure_type_key",
+            "failure_start_time",
+            "downtime_in_min",
+            "sys_time",
+        ),
+        "asset_worksheet_key",
+    ),
+    "OperationsDoneLists": SheetSpec(
+        (
+            "operations_done_key",
+            "operations_done_list_id",
+            "operation_template_id",
+            "asset_worksheet_key",
+            "maintenance_end_date",
+        ),
+        "operations_done_key",
+    ),
 }
 
 _KEY_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
@@ -218,6 +302,13 @@ def _optional_datetime(
                 f"Expected an ISO date/time at {_location(sheet, row, column)}"
             ) from exc
     raise SeedDataError(f"Expected a date/time at {_location(sheet, row, column)}")
+
+
+def _datetime(sheet: str, row: dict[str, Any], column: str) -> datetime:
+    value = _optional_datetime(sheet, row, column)
+    if value is None:
+        raise SeedDataError(f"Missing required value at {_location(sheet, row, column)}")
+    return value
 
 
 def _read_sheet(worksheet: Any, spec: SheetSpec) -> list[dict[str, Any]]:
@@ -488,6 +579,260 @@ def _validate_seed(seed: SeedWorkbook) -> None:
                 )
             seen[key] = row["_excel_row"]
 
+    failure_type_keys = _keys(seed, "FailureTypes", "failure_type_key")
+    for row in seed.rows("FailureTypes"):
+        failure_type_id = _integer(
+            "FailureTypes", row, "failure_type_id", required=True
+        )
+        if failure_type_id is not None and failure_type_id <= 0:
+            raise SeedDataError(
+                f"failure_type_id must be positive at "
+                f"{_location('FailureTypes', row, 'failure_type_id')}"
+            )
+        _required_text("FailureTypes", row, "failure_type_name")
+        _boolean("FailureTypes", row, "is_preventive")
+        failure_cause_id = _integer("FailureTypes", row, "failure_cause_id")
+        if failure_cause_id is not None and failure_cause_id <= 0:
+            raise SeedDataError(
+                f"failure_cause_id must be positive at "
+                f"{_location('FailureTypes', row, 'failure_cause_id')}"
+            )
+    _validate_optional_unique(
+        "FailureTypes", seed.rows("FailureTypes"), "failure_type_id"
+    )
+
+    asset_failure_type_keys = _keys(
+        seed, "AssetFailureTypes", "asset_failure_type_key"
+    )
+    _validate_reference(
+        "AssetFailureTypes",
+        seed.rows("AssetFailureTypes"),
+        "asset_key",
+        asset_keys,
+    )
+    _validate_reference(
+        "AssetFailureTypes",
+        seed.rows("AssetFailureTypes"),
+        "failure_type_key",
+        failure_type_keys,
+    )
+    for row in seed.rows("AssetFailureTypes"):
+        relation_id = _integer(
+            "AssetFailureTypes", row, "asset_failure_type_id", required=True
+        )
+        probability = _number(
+            "AssetFailureTypes",
+            row,
+            "default_occurrence_probability",
+        )
+        severity = _integer("AssetFailureTypes", row, "severity")
+        external_id = _integer(
+            "AssetFailureTypes", row, "asset_failurecause_id"
+        )
+        if relation_id is not None and relation_id <= 0:
+            raise SeedDataError(
+                f"asset_failure_type_id must be positive in row {row['_excel_row']}"
+            )
+        if probability is not None and not 0 <= probability <= 1:
+            raise SeedDataError(
+                f"default_occurrence_probability must be between 0 and 1 in "
+                f"AssetFailureTypes row {row['_excel_row']}"
+            )
+        if severity is not None and severity <= 0:
+            raise SeedDataError(
+                f"severity must be positive in AssetFailureTypes row "
+                f"{row['_excel_row']}"
+            )
+        if external_id is not None and external_id <= 0:
+            raise SeedDataError(
+                f"asset_failurecause_id must be positive in AssetFailureTypes "
+                f"row {row['_excel_row']}"
+            )
+    _validate_optional_unique(
+        "AssetFailureTypes",
+        seed.rows("AssetFailureTypes"),
+        "asset_failure_type_id",
+    )
+    _validate_optional_unique(
+        "AssetFailureTypes",
+        seed.rows("AssetFailureTypes"),
+        "asset_failurecause_id",
+    )
+
+    sensor_failure_type_keys = _keys(
+        seed, "SensorFailureTypes", "sensor_failure_type_key"
+    )
+    sensor_keys = _keys(seed, "Sensors", "sensor_key")
+    _validate_reference(
+        "SensorFailureTypes",
+        seed.rows("SensorFailureTypes"),
+        "sensor_key",
+        sensor_keys,
+    )
+    _validate_reference(
+        "SensorFailureTypes",
+        seed.rows("SensorFailureTypes"),
+        "failure_type_key",
+        failure_type_keys,
+    )
+    sensor_failure_pairs: dict[tuple[str, str], int] = {}
+    for row in seed.rows("SensorFailureTypes"):
+        pair = (
+            _required_text("SensorFailureTypes", row, "sensor_key"),
+            _required_text("SensorFailureTypes", row, "failure_type_key"),
+        )
+        if pair in sensor_failure_pairs:
+            raise SeedDataError(
+                f"Duplicate sensor/failure-type pair in SensorFailureTypes, rows "
+                f"{sensor_failure_pairs[pair]} and {row['_excel_row']}"
+            )
+        sensor_failure_pairs[pair] = row["_excel_row"]
+
+    _validate_reference(
+        "SensorStatistics",
+        seed.rows("SensorStatistics"),
+        "sensor_key",
+        sensor_keys,
+    )
+    for row in seed.rows("SensorStatistics"):
+        deviation = _number(
+            "SensorStatistics", row, "standard_deviation_value", required=True
+        )
+        if deviation is not None and deviation < 0:
+            raise SeedDataError(
+                f"standard_deviation_value must not be negative in "
+                f"SensorStatistics row {row['_excel_row']}"
+            )
+        _number("SensorStatistics", row, "average_value", required=True)
+        _datetime("SensorStatistics", row, "learning_time")
+
+    source_keys = _keys(seed, "DataSources", "source_key")
+    _validate_reference(
+        "Measurements", seed.rows("Measurements"), "sensor_key", sensor_keys
+    )
+    _validate_reference(
+        "Measurements", seed.rows("Measurements"), "source_key", source_keys
+    )
+    for row in seed.rows("Measurements"):
+        _datetime("Measurements", row, "time")
+        _number("Measurements", row, "value", required=True)
+
+    _validate_reference(
+        "EtaBetas",
+        seed.rows("EtaBetas"),
+        "asset_failure_type_key",
+        asset_failure_type_keys,
+    )
+    for row in seed.rows("EtaBetas"):
+        eta = _number("EtaBetas", row, "eta_value", required=True)
+        beta = _number("EtaBetas", row, "beta_value", required=True)
+        if eta is not None and eta <= 0:
+            raise SeedDataError(
+                f"eta_value must be positive in EtaBetas row {row['_excel_row']}"
+            )
+        if beta is not None and beta <= 0:
+            raise SeedDataError(
+                f"beta_value must be positive in EtaBetas row {row['_excel_row']}"
+            )
+        _datetime("EtaBetas", row, "learning_time")
+
+    _validate_reference(
+        "Gammas",
+        seed.rows("Gammas"),
+        "sensor_failure_type_key",
+        sensor_failure_type_keys,
+    )
+    for row in seed.rows("Gammas"):
+        _number("Gammas", row, "gamma_value", required=True)
+        _number("Gammas", row, "contribution", required=True)
+        _datetime("Gammas", row, "learning_time")
+
+    asset_worksheet_keys = _keys(
+        seed, "AssetWorksheetLists", "asset_worksheet_key"
+    )
+    _validate_reference(
+        "AssetWorksheetLists",
+        seed.rows("AssetWorksheetLists"),
+        "asset_key",
+        asset_keys,
+    )
+    worksheet_end_times: dict[str, datetime] = {}
+    for row in seed.rows("AssetWorksheetLists"):
+        worksheet_key = _required_text(
+            "AssetWorksheetLists", row, "asset_worksheet_key"
+        )
+        worksheet_id = _integer(
+            "AssetWorksheetLists", row, "asset_worksheet_list_id", required=True
+        )
+        if worksheet_id is not None and worksheet_id <= 0:
+            raise SeedDataError(
+                f"asset_worksheet_list_id must be positive in row "
+                f"{row['_excel_row']}"
+            )
+        end_time = _datetime(
+            "AssetWorksheetLists", row, "maintenance_end_date"
+        )
+        worksheet_end_times[worksheet_key] = end_time
+        _optional_datetime("AssetWorksheetLists", row, "source_sys_time")
+        _optional_datetime("AssetWorksheetLists", row, "failure_start_time")
+        _datetime("AssetWorksheetLists", row, "sys_time")
+        downtime = _integer("AssetWorksheetLists", row, "downtime_in_min")
+        if downtime is not None and downtime < 0:
+            raise SeedDataError(
+                f"downtime_in_min must not be negative in AssetWorksheetLists "
+                f"row {row['_excel_row']}"
+            )
+        failure_key = _optional_text(row.get("asset_failure_type_key"))
+        if failure_key is not None and failure_key not in asset_failure_type_keys:
+            raise SeedDataError(
+                f"Unknown reference {failure_key!r} at "
+                f"{_location('AssetWorksheetLists', row, 'asset_failure_type_key')}"
+            )
+    _validate_optional_unique(
+        "AssetWorksheetLists",
+        seed.rows("AssetWorksheetLists"),
+        "asset_worksheet_list_id",
+    )
+
+    _validate_reference(
+        "OperationsDoneLists",
+        seed.rows("OperationsDoneLists"),
+        "asset_worksheet_key",
+        asset_worksheet_keys,
+    )
+    for row in seed.rows("OperationsDoneLists"):
+        operation_id = _integer(
+            "OperationsDoneLists", row, "operations_done_list_id", required=True
+        )
+        template_id = _integer(
+            "OperationsDoneLists", row, "operation_template_id", required=True
+        )
+        if operation_id is not None and operation_id <= 0:
+            raise SeedDataError(
+                f"operations_done_list_id must be positive in row "
+                f"{row['_excel_row']}"
+            )
+        if template_id is not None and template_id <= 0:
+            raise SeedDataError(
+                f"operation_template_id must be positive in row {row['_excel_row']}"
+            )
+        worksheet_key = _required_text(
+            "OperationsDoneLists", row, "asset_worksheet_key"
+        )
+        end_time = _datetime(
+            "OperationsDoneLists", row, "maintenance_end_date"
+        )
+        if end_time != worksheet_end_times[worksheet_key]:
+            raise SeedDataError(
+                f"maintenance_end_date does not match {worksheet_key!r} in "
+                f"OperationsDoneLists row {row['_excel_row']}"
+            )
+    _validate_optional_unique(
+        "OperationsDoneLists",
+        seed.rows("OperationsDoneLists"),
+        "operations_done_list_id",
+    )
+
 
 def load_seed_workbook(path: str | Path) -> SeedWorkbook:
     """Read and fully validate the workbook without touching the database."""
@@ -754,6 +1099,354 @@ def import_seed_workbook(connection: Connection, seed: SeedWorkbook) -> SeedImpo
                     "Sensors", row, "chart_aggregation_method"
                 ),
             },
+        )
+
+    failure_type_ids: dict[str, int] = {}
+    for row in seed.rows("FailureTypes"):
+        key = _required_text("FailureTypes", row, "failure_type_key")
+        failure_type_ids[key] = _upsert_returning_id(
+            connection,
+            """
+            INSERT INTO public.failure_types
+                (failure_type_id, failure_type_name, is_preventive, failure_cause_id)
+            VALUES (:failure_type_id, :failure_type_name, :is_preventive,
+                    :failure_cause_id)
+            ON CONFLICT (failure_type_id) DO UPDATE SET
+                failure_type_name = EXCLUDED.failure_type_name,
+                is_preventive = EXCLUDED.is_preventive,
+                failure_cause_id = EXCLUDED.failure_cause_id
+            RETURNING failure_type_id
+            """,
+            {
+                "failure_type_id": _integer(
+                    "FailureTypes", row, "failure_type_id", required=True
+                ),
+                "failure_type_name": _required_text(
+                    "FailureTypes", row, "failure_type_name"
+                ),
+                "is_preventive": _boolean(
+                    "FailureTypes", row, "is_preventive"
+                ),
+                "failure_cause_id": _integer(
+                    "FailureTypes", row, "failure_cause_id"
+                ),
+            },
+        )
+
+    asset_failure_type_ids: dict[str, int] = {}
+    for row in seed.rows("AssetFailureTypes"):
+        key = _required_text(
+            "AssetFailureTypes", row, "asset_failure_type_key"
+        )
+        asset_failure_type_ids[key] = _upsert_returning_id(
+            connection,
+            """
+            INSERT INTO public.asset_failure_types
+                (asset_failure_type_id, asset_id, failure_type_id,
+                 default_occurrence_probability, severity, asset_failurecause_id)
+            VALUES (:asset_failure_type_id, :asset_id, :failure_type_id,
+                    :probability, :severity, :asset_failurecause_id)
+            ON CONFLICT (asset_failure_type_id) DO UPDATE SET
+                asset_id = EXCLUDED.asset_id,
+                failure_type_id = EXCLUDED.failure_type_id,
+                default_occurrence_probability =
+                    EXCLUDED.default_occurrence_probability,
+                severity = EXCLUDED.severity,
+                asset_failurecause_id = EXCLUDED.asset_failurecause_id
+            RETURNING asset_failure_type_id
+            """,
+            {
+                "asset_failure_type_id": _integer(
+                    "AssetFailureTypes",
+                    row,
+                    "asset_failure_type_id",
+                    required=True,
+                ),
+                "asset_id": asset_ids[
+                    _required_text("AssetFailureTypes", row, "asset_key")
+                ],
+                "failure_type_id": failure_type_ids[
+                    _required_text(
+                        "AssetFailureTypes", row, "failure_type_key"
+                    )
+                ],
+                "probability": _number(
+                    "AssetFailureTypes",
+                    row,
+                    "default_occurrence_probability",
+                ),
+                "severity": _integer("AssetFailureTypes", row, "severity"),
+                "asset_failurecause_id": _integer(
+                    "AssetFailureTypes", row, "asset_failurecause_id"
+                ),
+            },
+        )
+
+    sensor_failure_type_ids: dict[str, int] = {}
+    for row in seed.rows("SensorFailureTypes"):
+        key = _required_text(
+            "SensorFailureTypes", row, "sensor_failure_type_key"
+        )
+        sensor_failure_type_ids[key] = _upsert_returning_id(
+            connection,
+            """
+            INSERT INTO public.sensor_failure_types (sensor_id, failure_type_id)
+            VALUES (:sensor_id, :failure_type_id)
+            ON CONFLICT (sensor_id, failure_type_id) DO UPDATE SET
+                sensor_id = EXCLUDED.sensor_id
+            RETURNING sensor_failure_type_id
+            """,
+            {
+                "sensor_id": sensor_ids[
+                    _required_text("SensorFailureTypes", row, "sensor_key")
+                ],
+                "failure_type_id": failure_type_ids[
+                    _required_text(
+                        "SensorFailureTypes", row, "failure_type_key"
+                    )
+                ],
+            },
+        )
+
+    sensor_statistic_upsert = text(
+        """
+        WITH updated AS (
+            UPDATE public.sensor_statistics
+            SET standard_deviation_value = :standard_deviation_value,
+                average_value = :average_value
+            WHERE sensor_id = :sensor_id AND learning_time = :learning_time
+            RETURNING sensor_statistic_id
+        )
+        INSERT INTO public.sensor_statistics
+            (sensor_id, standard_deviation_value, average_value, learning_time)
+        SELECT :sensor_id, :standard_deviation_value, :average_value, :learning_time
+        WHERE NOT EXISTS (SELECT 1 FROM updated)
+        """
+    )
+    for row in seed.rows("SensorStatistics"):
+        connection.execute(
+            sensor_statistic_upsert,
+            {
+                "sensor_id": sensor_ids[
+                    _required_text("SensorStatistics", row, "sensor_key")
+                ],
+                "standard_deviation_value": _number(
+                    "SensorStatistics",
+                    row,
+                    "standard_deviation_value",
+                    required=True,
+                ),
+                "average_value": _number(
+                    "SensorStatistics", row, "average_value", required=True
+                ),
+                "learning_time": _datetime(
+                    "SensorStatistics", row, "learning_time"
+                ),
+            },
+        )
+
+    measurement_upsert = text(
+        """
+        WITH updated AS (
+            UPDATE public.measurements
+            SET value = :value
+            WHERE sensor_id = :sensor_id
+              AND data_source_id = :data_source_id
+              AND time = :time
+            RETURNING measurement_id
+        )
+        INSERT INTO public.measurements (sensor_id, time, value, data_source_id)
+        SELECT :sensor_id, :time, :value, :data_source_id
+        WHERE NOT EXISTS (SELECT 1 FROM updated)
+        """
+    )
+    for row in seed.rows("Measurements"):
+        connection.execute(
+            measurement_upsert,
+            {
+                "sensor_id": sensor_ids[
+                    _required_text("Measurements", row, "sensor_key")
+                ],
+                "time": _datetime("Measurements", row, "time"),
+                "value": _number("Measurements", row, "value", required=True),
+                "data_source_id": data_source_ids[
+                    _required_text("Measurements", row, "source_key")
+                ],
+            },
+        )
+
+    eta_beta_upsert = text(
+        """
+        INSERT INTO public.etas_betas
+            (eta_value, beta_value, asset_failure_type_id, learning_time)
+        SELECT :eta_value, :beta_value, :asset_failure_type_id, :learning_time
+        WHERE NOT EXISTS (
+            SELECT 1 FROM public.etas_betas
+            WHERE asset_failure_type_id = :asset_failure_type_id
+              AND learning_time = :learning_time
+        )
+        """
+    )
+    for row in seed.rows("EtaBetas"):
+        connection.execute(
+            eta_beta_upsert,
+            {
+                "eta_value": _number(
+                    "EtaBetas", row, "eta_value", required=True
+                ),
+                "beta_value": _number(
+                    "EtaBetas", row, "beta_value", required=True
+                ),
+                "asset_failure_type_id": asset_failure_type_ids[
+                    _required_text(
+                        "EtaBetas", row, "asset_failure_type_key"
+                    )
+                ],
+                "learning_time": _datetime("EtaBetas", row, "learning_time"),
+            },
+        )
+
+    gamma_upsert = text(
+        """
+        INSERT INTO public.gammas
+            (gamma_value, sensor_failure_type_id, contribution, learning_time)
+        SELECT :gamma_value, :sensor_failure_type_id, :contribution, :learning_time
+        WHERE NOT EXISTS (
+            SELECT 1 FROM public.gammas
+            WHERE sensor_failure_type_id = :sensor_failure_type_id
+              AND learning_time = :learning_time
+        )
+        """
+    )
+    for row in seed.rows("Gammas"):
+        connection.execute(
+            gamma_upsert,
+            {
+                "gamma_value": _number(
+                    "Gammas", row, "gamma_value", required=True
+                ),
+                "sensor_failure_type_id": sensor_failure_type_ids[
+                    _required_text(
+                        "Gammas", row, "sensor_failure_type_key"
+                    )
+                ],
+                "contribution": _number(
+                    "Gammas", row, "contribution", required=True
+                ),
+                "learning_time": _datetime("Gammas", row, "learning_time"),
+            },
+        )
+
+    asset_worksheet_ids: dict[str, int] = {}
+    asset_worksheet_end_times: dict[str, datetime] = {}
+    for row in seed.rows("AssetWorksheetLists"):
+        key = _required_text(
+            "AssetWorksheetLists", row, "asset_worksheet_key"
+        )
+        maintenance_end_date = _datetime(
+            "AssetWorksheetLists", row, "maintenance_end_date"
+        )
+        asset_failure_type_key = _optional_text(
+            row.get("asset_failure_type_key")
+        )
+        asset_worksheet_ids[key] = _upsert_returning_id(
+            connection,
+            """
+            INSERT INTO public.asset_worksheet_lists
+                (asset_worksheet_list_id, asset_id, maintenance_end_date,
+                 source_sys_time, asset_failure_type_id, failure_start_time,
+                 downtime_in_min, sys_time)
+            VALUES (:asset_worksheet_list_id, :asset_id, :maintenance_end_date,
+                    :source_sys_time, :asset_failure_type_id,
+                    :failure_start_time, :downtime_in_min, :sys_time)
+            ON CONFLICT (asset_worksheet_list_id, maintenance_end_date) DO UPDATE SET
+                asset_id = EXCLUDED.asset_id,
+                source_sys_time = EXCLUDED.source_sys_time,
+                asset_failure_type_id = EXCLUDED.asset_failure_type_id,
+                failure_start_time = EXCLUDED.failure_start_time,
+                downtime_in_min = EXCLUDED.downtime_in_min,
+                sys_time = EXCLUDED.sys_time
+            RETURNING asset_worksheet_list_id
+            """,
+            {
+                "asset_worksheet_list_id": _integer(
+                    "AssetWorksheetLists",
+                    row,
+                    "asset_worksheet_list_id",
+                    required=True,
+                ),
+                "asset_id": asset_ids[
+                    _required_text("AssetWorksheetLists", row, "asset_key")
+                ],
+                "maintenance_end_date": maintenance_end_date,
+                "source_sys_time": _optional_datetime(
+                    "AssetWorksheetLists", row, "source_sys_time"
+                ),
+                "asset_failure_type_id": (
+                    asset_failure_type_ids[asset_failure_type_key]
+                    if asset_failure_type_key is not None
+                    else None
+                ),
+                "failure_start_time": _optional_datetime(
+                    "AssetWorksheetLists", row, "failure_start_time"
+                ),
+                "downtime_in_min": _integer(
+                    "AssetWorksheetLists", row, "downtime_in_min"
+                ),
+                "sys_time": _datetime("AssetWorksheetLists", row, "sys_time"),
+            },
+        )
+        asset_worksheet_end_times[key] = maintenance_end_date
+
+    for row in seed.rows("OperationsDoneLists"):
+        worksheet_key = _required_text(
+            "OperationsDoneLists", row, "asset_worksheet_key"
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO public.operations_done_lists
+                    (operations_done_list_id, operation_template_id,
+                     asset_worksheet_list_id, maintenance_end_date)
+                VALUES (:operations_done_list_id, :operation_template_id,
+                        :asset_worksheet_list_id, :maintenance_end_date)
+                ON CONFLICT (operations_done_list_id) DO UPDATE SET
+                    operation_template_id = EXCLUDED.operation_template_id,
+                    asset_worksheet_list_id = EXCLUDED.asset_worksheet_list_id,
+                    maintenance_end_date = EXCLUDED.maintenance_end_date
+                """
+            ),
+            {
+                "operations_done_list_id": _integer(
+                    "OperationsDoneLists",
+                    row,
+                    "operations_done_list_id",
+                    required=True,
+                ),
+                "operation_template_id": _integer(
+                    "OperationsDoneLists",
+                    row,
+                    "operation_template_id",
+                    required=True,
+                ),
+                "asset_worksheet_list_id": asset_worksheet_ids[worksheet_key],
+                "maintenance_end_date": asset_worksheet_end_times[worksheet_key],
+            },
+        )
+
+    for table, id_column in (
+        ("failure_types", "failure_type_id"),
+        ("asset_failure_types", "asset_failure_type_id"),
+        ("asset_worksheet_lists", "asset_worksheet_list_id"),
+        ("operations_done_lists", "operations_done_list_id"),
+    ):
+        connection.execute(
+            text(
+                "SELECT setval(pg_get_serial_sequence(:table_name, :id_column), "
+                f"GREATEST(COALESCE((SELECT max({id_column}) FROM public.{table}), 1), 1), "
+                "TRUE)"
+            ),
+            {"table_name": f"public.{table}", "id_column": id_column},
         )
 
     product_type_ids: dict[str, int] = {}

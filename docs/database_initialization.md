@@ -28,6 +28,20 @@ Docker Compose enforces this through the `db-init` dependency.
 7. Missing sensor/failure-type combinations are generated and database
    triggers are installed for later additions.
 
+The workbook also contains the prediction module's initial input data:
+
+- failure types and asset/failure-type relations;
+- the complete sensor/failure-type relation matrix;
+- initial sensor statistics and measurement history;
+- maintenance worksheet and completed-operation history;
+- dummy Eta/Beta and Gamma parameters that the prediction module can replace
+  or extend with learned values during normal operation.
+
+`predictions`, `prediction_asset_levels`, and
+`prediction_asset_failure_type_levels` are runtime output tables. They are not
+seeded from the example CSV exports, and no synthetic prediction jobs are
+created during initialization.
+
 If validation or import fails, `db-init` exits unsuccessfully and the dependent
 services do not start.
 
@@ -48,6 +62,15 @@ services do not start.
   `maximum`.
 - `ranges_key` is reserved for a later `Ranges` worksheet and must remain blank
   until that importer extension is implemented.
+- `default_occurrence_probability` is stored as a fraction between 0 and 1.
+- Prediction-related references use workbook keys (`asset_key`, `sensor_key`,
+  `failure_type_key`, and the relation keys), not generated database IDs.
+- The packaged CSV ID mapping is documented on the workbook's `ReadMe` sheet.
+- Keep the initial Eta/Beta values positive. Gamma and contribution values may
+  be zero. The packaged workbook uses `eta=1`, `beta=1`, `gamma=1`, and
+  `contribution=0` as explicit dummy values.
+- Eta/Beta and Gamma seed rows are inserted only when their relation/timestamp
+  pair is missing, so a later startup does not reset values learned at runtime.
 
 The importer updates or creates master data, but does not delete master rows.
 For configurations present in the workbook, it does replace routing and

@@ -21,6 +21,15 @@ def test_packaged_seed_workbook_is_valid() -> None:
     assert len(seed.rows("Sensors")) == 17
     assert len(seed.rows("ProcessSteps")) == 10
     assert len(seed.rows("Routing")) == 11
+    assert len(seed.rows("FailureTypes")) == 3
+    assert len(seed.rows("AssetFailureTypes")) == 4
+    assert len(seed.rows("SensorFailureTypes")) == 51
+    assert len(seed.rows("SensorStatistics")) == 6
+    assert len(seed.rows("Measurements")) == 2880
+    assert len(seed.rows("EtaBetas")) == 4
+    assert len(seed.rows("Gammas")) == 51
+    assert len(seed.rows("AssetWorksheetLists")) == 6
+    assert len(seed.rows("OperationsDoneLists")) == 22
 
 
 def test_future_external_identifier_columns_are_present() -> None:
@@ -83,8 +92,28 @@ def test_complete_workbook_can_be_planned_for_import() -> None:
     result = import_seed_workbook(connection, seed)  # type: ignore[arg-type]
 
     sql = "\n".join(statement for statement, _ in connection.statements)
-    assert result.total_rows == 77
+    assert result.total_rows == 3104
     assert sql.count("INSERT INTO public.asset_process_steps") == 10
     assert sql.count("INSERT INTO public.routing") == 11
+    assert sql.count("INSERT INTO public.sensor_failure_types") == 51
+    assert sql.count("INSERT INTO public.measurements") == 2880
+    assert sql.count("INSERT INTO public.etas_betas") == 4
+    assert sql.count("INSERT INTO public.gammas") == 51
+    assert "UPDATE public.etas_betas" not in sql
+    assert "UPDATE public.gammas" not in sql
+    assert sql.count("INSERT INTO public.asset_worksheet_lists") == 6
+    assert sql.count("INSERT INTO public.operations_done_lists") == 22
+    assert "INSERT INTO public.predictions" not in sql
     assert "COALESCE(EXCLUDED.cmms_asset_id, assets.cmms_asset_id)" in sql
     assert "ALTER COLUMN data_source_id" in sql
+
+
+def test_prediction_parameters_start_with_dummy_values() -> None:
+    seed = load_seed_workbook(WORKBOOK_PATH)
+
+    assert {
+        (row["eta_value"], row["beta_value"])
+        for row in seed.rows("EtaBetas")
+    } == {(1, 1)}
+    assert {row["gamma_value"] for row in seed.rows("Gammas")} == {1}
+    assert {row["contribution"] for row in seed.rows("Gammas")} == {0}
