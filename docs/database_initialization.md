@@ -66,6 +66,11 @@ services do not start.
 - Prediction-related references use workbook keys (`asset_key`, `sensor_key`,
   `failure_type_key`, and the relation keys), not generated database IDs.
 - The packaged CSV ID mapping is documented on the workbook's `ReadMe` sheet.
+- `average_value` is the arithmetic mean of every packaged measurement for the
+  referenced sensor. `standard_deviation_value` is the corresponding sample
+  standard deviation (`STDDEV_SAMP`). The seed contains one statistics row per
+  sensor with measurements, using a past `learning_time`; the prediction module
+  reads the row having the latest learning time.
 - Keep the initial Eta/Beta values positive. Gamma and contribution values may
   be zero. The packaged workbook uses `eta=1`, `beta=1`, `gamma=1`, and
   `contribution=0` as explicit dummy values.

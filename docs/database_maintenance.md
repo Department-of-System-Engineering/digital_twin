@@ -18,6 +18,28 @@ Apply the validated workbook:
 python3 scripts/database_admin.py seed-update
 ```
 
+## One-time sensor statistics backfill
+
+Existing installations can create a new statistics version from all currently
+stored measurements with:
+
+```bash
+python3 scripts/database_admin.py sensor-statistics-backfill
+```
+
+The command executes in one transaction and inserts one row per sensor that has
+measurements. `average_value` uses PostgreSQL `AVG(value)`, while
+`standard_deviation_value` uses `STDDEV_SAMP(value)` and falls back to zero when
+a sensor has only one measurement. The default `learning_time` is one second
+before command startup, so the prediction module selects the new rows as the
+latest completed learning version.
+
+This is deliberately isolated as a temporary administrative operation. After
+all installations have been backfilled, it can be removed by deleting
+`app/sensor_statistics_backfill.py`, its tests, the
+`sensor-statistics-backfill` Compose service, and the matching
+`scripts/database_admin.py` subcommand.
+
 The maintenance container reads the current host-side workbook through a
 read-only bind mount, so changing Excel data does not require rebuilding the
 Docker image. Importer code changes still require an image rebuild.

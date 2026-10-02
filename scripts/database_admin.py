@@ -52,6 +52,10 @@ def update_seed() -> None:
     _run(["run", "--rm", "db-seed-update"])
 
 
+def backfill_sensor_statistics() -> None:
+    _run(["run", "--rm", "sensor-statistics-backfill"])
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
@@ -113,6 +117,10 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("seed-validate", help="Validate the Excel seed only.")
     subparsers.add_parser("seed-update", help="Atomically upsert Excel master data.")
+    subparsers.add_parser(
+        "sensor-statistics-backfill",
+        help="Insert sensor averages and sample standard deviations once.",
+    )
     backup_parser = subparsers.add_parser(
         "backup", help="Create and verify a full PostgreSQL custom-format dump."
     )
@@ -129,6 +137,8 @@ def main() -> None:
             validate_seed()
         elif args.command == "seed-update":
             update_seed()
+        elif args.command == "sensor-statistics-backfill":
+            backfill_sensor_statistics()
         else:
             backup_database(args.output_dir.resolve())
     except RuntimeError as exc:

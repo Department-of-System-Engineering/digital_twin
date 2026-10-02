@@ -24,7 +24,7 @@ def test_packaged_seed_workbook_is_valid() -> None:
     assert len(seed.rows("FailureTypes")) == 3
     assert len(seed.rows("AssetFailureTypes")) == 4
     assert len(seed.rows("SensorFailureTypes")) == 51
-    assert len(seed.rows("SensorStatistics")) == 6
+    assert len(seed.rows("SensorStatistics")) == 3
     assert len(seed.rows("Measurements")) == 2880
     assert len(seed.rows("EtaBetas")) == 4
     assert len(seed.rows("Gammas")) == 51
@@ -92,7 +92,7 @@ def test_complete_workbook_can_be_planned_for_import() -> None:
     result = import_seed_workbook(connection, seed)  # type: ignore[arg-type]
 
     sql = "\n".join(statement for statement, _ in connection.statements)
-    assert result.total_rows == 3104
+    assert result.total_rows == 3101
     assert sql.count("INSERT INTO public.asset_process_steps") == 10
     assert sql.count("INSERT INTO public.routing") == 11
     assert sql.count("INSERT INTO public.sensor_failure_types") == 51
