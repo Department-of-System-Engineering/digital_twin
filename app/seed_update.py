@@ -7,6 +7,9 @@ from sqlalchemy import text
 
 from .db import sync_engine
 from .maintenance.sensor_failure_sync import configure_sensor_failure_type_sync
+from .maintenance.prediction_parameter_defaults import (
+    configure_prediction_parameter_defaults,
+)
 from .seed_data import import_seed_workbook, load_seed_workbook
 from .settings import settings
 
@@ -38,13 +41,18 @@ def update_seed_data(*, validate_only: bool = False) -> None:
         )
         result = import_seed_workbook(connection, seed)
         inserted_relations = configure_sensor_failure_type_sync(connection)
+        inserted_eta_betas, inserted_gammas = (
+            configure_prediction_parameter_defaults(connection)
+        )
 
     log.info(
         "Seed update committed: workbook=%s, rows=%s, "
-        "new_sensor_failure_relations=%s",
+        "new_sensor_failure_relations=%s, default_eta_betas=%s, default_gammas=%s",
         seed.path,
         result.total_rows,
         inserted_relations,
+        inserted_eta_betas,
+        inserted_gammas,
     )
 
 

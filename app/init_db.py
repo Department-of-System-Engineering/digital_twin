@@ -4,6 +4,9 @@ from sqlalchemy import inspect, text
 
 from .db import sync_engine
 from .maintenance.sensor_failure_sync import configure_sensor_failure_type_sync
+from .maintenance.prediction_parameter_defaults import (
+    configure_prediction_parameter_defaults,
+)
 from .models import Base
 from .seed_data import import_seed_workbook, load_seed_workbook
 from .settings import settings
@@ -302,11 +305,19 @@ def main() -> None:
             connection.execute(text(statement))
 
         inserted_sensor_failure_types = configure_sensor_failure_type_sync(connection)
+        inserted_eta_betas, inserted_gammas = (
+            configure_prediction_parameter_defaults(connection)
+        )
         connection.commit()
 
         log.info(
             "Sensor/failure-type synchronization complete: inserted=%s",
             inserted_sensor_failure_types,
+        )
+        log.info(
+            "Prediction parameter defaults complete: eta_betas=%s, gammas=%s",
+            inserted_eta_betas,
+            inserted_gammas,
         )
 
         existing_tables = set(

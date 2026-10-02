@@ -33,6 +33,7 @@ The workbook also contains the prediction module's initial input data:
 - failure types and asset/failure-type relations;
 - the complete sensor/failure-type relation matrix;
 - initial sensor statistics and measurement history;
+- initial eta, beta and gamma values of `1` for every failure relation;
 - maintenance worksheet and completed-operation history;
 - dummy Eta/Beta and Gamma parameters that the prediction module can replace
   or extend with learned values during normal operation.
