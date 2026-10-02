@@ -303,8 +303,8 @@ def process_job(session: Session, job: PredictionJob) -> None:
         #                            delta_sampling=prediction_config.delta_sampling, delta_horizon=prediction_config.delta_horizon)
 
         # !! predikciós modul meghívása
-        # prediction_result = run_prediction(asset_id=sync_result.asset_id, job_id=job_id, operation_template_dict=sync_result.asset_failure_cause_operations, failure_start_time=workorder.failure_date,
-        #                                   maintenance_end_time=workorder.ended, delta_horizon=prediction_config.delta_horizon, delta_sampling=prediction_config.delta_sampling, session=session)
+        prediction_result = run_prediction(asset_id=sync_result.asset_id, job_id=job_id, operation_template_dict=sync_result.asset_failure_cause_operations, failure_start_time=workorder.failure_date,
+                                          maintenance_end_time=workorder.ended, delta_horizon=prediction_config.delta_horizon, delta_sampling=prediction_config.delta_sampling, session=session)
 
         failure_type_ids_dummy = ['9', '10', '11']
         prediction_result = run_prediction_mock(failure_type_ids_dummy)
@@ -319,6 +319,7 @@ def process_job(session: Session, job: PredictionJob) -> None:
         verify_stored_prediction(session=session, prediction_id=prediction_id, job_id=job_id, asset_id=(sync_result.asset_id))
 
     except Exception as error:
+        logger.exception("Prediction execution failed: job_id={}", job_id)
         if _is_admin_shutdown_error(error):
             raise
 
