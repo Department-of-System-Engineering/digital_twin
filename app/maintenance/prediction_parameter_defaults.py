@@ -27,7 +27,14 @@ _BACKFILL_STATEMENTS = (
         SELECT 1
         FROM public.etas_betas AS parameter
         WHERE parameter.asset_failure_type_id = relation.asset_failure_type_id
+          AND parameter.learning_time = TIMESTAMP '2026-09-01 00:00:00'
     )
+    """,
+    """
+    UPDATE public.gammas
+    SET gamma_value = 1.0,
+        contribution = 0.0
+    WHERE learning_time = TIMESTAMP '2026-09-01 00:00:00'
     """,
     """
     INSERT INTO public.gammas
@@ -42,6 +49,7 @@ _BACKFILL_STATEMENTS = (
         SELECT 1
         FROM public.gammas AS parameter
         WHERE parameter.sensor_failure_type_id = relation.sensor_failure_type_id
+          AND parameter.learning_time = TIMESTAMP '2026-09-01 00:00:00'
     )
     """,
 )
@@ -115,13 +123,16 @@ def configure_prediction_parameter_defaults(
     """Backfill missing defaults and install triggers for future relations."""
 
     executor.execute(text(_BACKFILL_STATEMENTS[0]))
-
-    inserted_counts: list[int] = []
-    for statement in _BACKFILL_STATEMENTS[1:]:
-        result = executor.execute(text(statement))
-        inserted_counts.append(max(result.rowcount or 0, 0))
+    inserted_eta_betas = executor.execute(
+        text(_BACKFILL_STATEMENTS[1])
+    )
+    executor.execute(text(_BACKFILL_STATEMENTS[2]))
+    inserted_gammas = executor.execute(text(_BACKFILL_STATEMENTS[3]))
 
     for statement in _TRIGGER_STATEMENTS:
         executor.execute(text(statement))
 
-    return inserted_counts[0], inserted_counts[1]
+    return (
+        max(inserted_eta_betas.rowcount or 0, 0),
+        max(inserted_gammas.rowcount or 0, 0),
+    )

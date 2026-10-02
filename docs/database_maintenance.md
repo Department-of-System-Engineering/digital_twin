@@ -40,6 +40,26 @@ all installations have been backfilled, it can be removed by deleting
 `sensor-statistics-backfill` Compose service, and the matching
 `scripts/database_admin.py` subcommand.
 
+## One-time prediction parameter seed
+
+Create or update the common initial parameter version for every current
+asset/failure-type and sensor/failure-type relation with:
+
+```bash
+python3 scripts/database_admin.py prediction-parameter-seed
+```
+
+Equivalent direct Compose command:
+
+```bash
+docker compose run --rm prediction-parameter-seed
+```
+
+The command uses `eta=10000`, `beta=1`, `gamma=1`, `contribution=0` and
+`learning_time=2026-09-01 00:00:00`. It is idempotent for that learning time:
+existing rows are updated and missing rows are inserted. Later learned parameter
+versions are preserved.
+
 The maintenance container reads the current host-side workbook through a
 read-only bind mount, so changing Excel data does not require rebuilding the
 Docker image. Importer code changes still require an image rebuild.

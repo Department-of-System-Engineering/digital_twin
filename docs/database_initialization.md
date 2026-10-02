@@ -34,7 +34,8 @@ The workbook also contains the prediction module's initial input data:
 - the complete sensor/failure-type relation matrix;
 - initial sensor statistics and measurement history;
 - initial eta value of `10000`, and beta and gamma values of `1`, for every
-  failure relation;
+  failure relation, using `2026-09-01 00:00:00` as the common initial
+  `learning_time`;
 - maintenance worksheet and completed-operation history;
 - dummy Eta/Beta and Gamma parameters that the prediction module can replace
   or extend with learned values during normal operation.

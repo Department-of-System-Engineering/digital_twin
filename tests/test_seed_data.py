@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 
 from app.seed_data import import_seed_workbook, load_seed_workbook
@@ -117,3 +118,10 @@ def test_prediction_parameters_start_with_dummy_values() -> None:
     } == {(10000, 1)}
     assert {row["gamma_value"] for row in seed.rows("Gammas")} == {1}
     assert {row["contribution"] for row in seed.rows("Gammas")} == {0}
+    expected_learning_time = datetime(2026, 9, 1)
+    assert {
+        row["learning_time"] for row in seed.rows("EtaBetas")
+    } == {expected_learning_time}
+    assert {
+        row["learning_time"] for row in seed.rows("Gammas")
+    } == {expected_learning_time}

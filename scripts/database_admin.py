@@ -56,6 +56,10 @@ def backfill_sensor_statistics() -> None:
     _run(["run", "--rm", "sensor-statistics-backfill"])
 
 
+def seed_prediction_parameters() -> None:
+    _run(["run", "--rm", "prediction-parameter-seed"])
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
@@ -121,6 +125,10 @@ def main() -> None:
         "sensor-statistics-backfill",
         help="Insert sensor averages and sample standard deviations once.",
     )
+    subparsers.add_parser(
+        "prediction-parameter-seed",
+        help="Upsert Eta, Beta and Gamma defaults for every failure relation.",
+    )
     backup_parser = subparsers.add_parser(
         "backup", help="Create and verify a full PostgreSQL custom-format dump."
     )
@@ -139,6 +147,8 @@ def main() -> None:
             update_seed()
         elif args.command == "sensor-statistics-backfill":
             backfill_sensor_statistics()
+        elif args.command == "prediction-parameter-seed":
+            seed_prediction_parameters()
         else:
             backup_database(args.output_dir.resolve())
     except RuntimeError as exc:

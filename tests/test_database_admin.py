@@ -52,3 +52,18 @@ def test_sensor_statistics_backfill_uses_dedicated_compose_service(
     database_admin.backfill_sensor_statistics()
 
     assert calls == [["run", "--rm", "sensor-statistics-backfill"]]
+
+
+def test_prediction_parameter_seed_uses_dedicated_compose_service(
+    monkeypatch,
+) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        database_admin,
+        "_run",
+        lambda arguments, **_: calls.append(arguments),
+    )
+
+    database_admin.seed_prediction_parameters()
+
+    assert calls == [["run", "--rm", "prediction-parameter-seed"]]
