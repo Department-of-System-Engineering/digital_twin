@@ -1277,14 +1277,18 @@ def import_seed_workbook(connection: Connection, seed: SeedWorkbook) -> SeedImpo
 
     eta_beta_upsert = text(
         """
+        WITH updated AS (
+            UPDATE public.etas_betas
+            SET eta_value = :eta_value,
+                beta_value = :beta_value
+            WHERE asset_failure_type_id = :asset_failure_type_id
+              AND learning_time = :learning_time
+            RETURNING eta_beta_id
+        )
         INSERT INTO public.etas_betas
             (eta_value, beta_value, asset_failure_type_id, learning_time)
         SELECT :eta_value, :beta_value, :asset_failure_type_id, :learning_time
-        WHERE NOT EXISTS (
-            SELECT 1 FROM public.etas_betas
-            WHERE asset_failure_type_id = :asset_failure_type_id
-              AND learning_time = :learning_time
-        )
+        WHERE NOT EXISTS (SELECT 1 FROM updated)
         """
     )
     for row in seed.rows("EtaBetas"):

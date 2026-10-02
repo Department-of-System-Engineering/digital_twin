@@ -29,9 +29,10 @@ def test_defaults_are_backfilled_and_kept_complete_by_triggers() -> None:
 
     sql = "\n".join(executor.statements)
     assert inserted == (3, 12)
-    assert "1.0,\n        1.0" in sql
+    assert "SET eta_value = 10000.0" in sql
+    assert "10000.0,\n        1.0" in sql
     assert "INSERT INTO public.gammas" in sql
     assert "CREATE TRIGGER trg_add_initial_eta_beta" in sql
     assert "CREATE TRIGGER trg_add_initial_gamma" in sql
-    assert sql.count("TIMESTAMP '1970-01-01 00:00:00'") == 4
+    assert sql.count("TIMESTAMP '2026-09-01 00:00:00'") == 5
     assert "WHERE NOT EXISTS" in sql

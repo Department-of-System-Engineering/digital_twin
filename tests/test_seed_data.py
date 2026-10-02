@@ -99,7 +99,7 @@ def test_complete_workbook_can_be_planned_for_import() -> None:
     assert sql.count("INSERT INTO public.measurements") == 2880
     assert sql.count("INSERT INTO public.etas_betas") == 4
     assert sql.count("INSERT INTO public.gammas") == 51
-    assert "UPDATE public.etas_betas" not in sql
+    assert "UPDATE public.etas_betas" in sql
     assert "UPDATE public.gammas" not in sql
     assert sql.count("INSERT INTO public.asset_worksheet_lists") == 6
     assert sql.count("INSERT INTO public.operations_done_lists") == 22
@@ -114,6 +114,6 @@ def test_prediction_parameters_start_with_dummy_values() -> None:
     assert {
         (row["eta_value"], row["beta_value"])
         for row in seed.rows("EtaBetas")
-    } == {(1, 1)}
+    } == {(10000, 1)}
     assert {row["gamma_value"] for row in seed.rows("Gammas")} == {1}
     assert {row["contribution"] for row in seed.rows("Gammas")} == {0}

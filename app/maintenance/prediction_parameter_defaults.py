@@ -7,18 +7,21 @@ from sqlalchemy.orm import Session
 
 DatabaseExecutor = Connection | Session
 
-INITIAL_LEARNING_TIME = "1970-01-01 00:00:00"
-
-
 _BACKFILL_STATEMENTS = (
+    """
+    UPDATE public.etas_betas
+    SET eta_value = 10000.0,
+        beta_value = 1.0
+    WHERE learning_time = TIMESTAMP '2026-09-01 00:00:00'
+    """,
     """
     INSERT INTO public.etas_betas
         (eta_value, beta_value, asset_failure_type_id, learning_time)
     SELECT
-        1.0,
+        10000.0,
         1.0,
         relation.asset_failure_type_id,
-        TIMESTAMP '1970-01-01 00:00:00'
+        TIMESTAMP '2026-09-01 00:00:00'
     FROM public.asset_failure_types AS relation
     WHERE NOT EXISTS (
         SELECT 1
@@ -33,7 +36,7 @@ _BACKFILL_STATEMENTS = (
         1.0,
         relation.sensor_failure_type_id,
         0.0,
-        TIMESTAMP '1970-01-01 00:00:00'
+        TIMESTAMP '2026-09-01 00:00:00'
     FROM public.sensor_failure_types AS relation
     WHERE NOT EXISTS (
         SELECT 1
@@ -54,10 +57,10 @@ _TRIGGER_STATEMENTS = (
         INSERT INTO public.etas_betas
             (eta_value, beta_value, asset_failure_type_id, learning_time)
         VALUES (
-            1.0,
+            10000.0,
             1.0,
             NEW.asset_failure_type_id,
-            TIMESTAMP '1970-01-01 00:00:00'
+            TIMESTAMP '2026-09-01 00:00:00'
         );
 
         RETURN NEW;
@@ -86,7 +89,7 @@ _TRIGGER_STATEMENTS = (
             1.0,
             NEW.sensor_failure_type_id,
             0.0,
-            TIMESTAMP '1970-01-01 00:00:00'
+            TIMESTAMP '2026-09-01 00:00:00'
         );
 
         RETURN NEW;
@@ -111,8 +114,10 @@ def configure_prediction_parameter_defaults(
 ) -> tuple[int, int]:
     """Backfill missing defaults and install triggers for future relations."""
 
+    executor.execute(text(_BACKFILL_STATEMENTS[0]))
+
     inserted_counts: list[int] = []
-    for statement in _BACKFILL_STATEMENTS:
+    for statement in _BACKFILL_STATEMENTS[1:]:
         result = executor.execute(text(statement))
         inserted_counts.append(max(result.rowcount or 0, 0))
 
