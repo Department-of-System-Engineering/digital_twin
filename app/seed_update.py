@@ -10,6 +10,10 @@ from .maintenance.sensor_failure_sync import configure_sensor_failure_type_sync
 from .maintenance.prediction_parameter_defaults import (
     configure_prediction_parameter_defaults,
 )
+from .maintenance.failure_type_reconciliation import (
+    cleanup_legacy_seed_failure_types,
+    configure_cmms_failure_identifiers,
+)
 from .seed_data import import_seed_workbook, load_seed_workbook
 from .settings import settings
 
@@ -40,6 +44,10 @@ def update_seed_data(*, validate_only: bool = False) -> None:
             {"lock_name": _IMPORT_LOCK_NAME},
         )
         result = import_seed_workbook(connection, seed)
+        legacy_cleanup = (
+            cleanup_legacy_seed_failure_types(connection)
+        )
+        configure_cmms_failure_identifiers(connection)
         inserted_relations = configure_sensor_failure_type_sync(connection)
         inserted_eta_betas, inserted_gammas = (
             configure_prediction_parameter_defaults(connection)
@@ -47,9 +55,11 @@ def update_seed_data(*, validate_only: bool = False) -> None:
 
     log.info(
         "Seed update committed: workbook=%s, rows=%s, "
-        "new_sensor_failure_relations=%s, default_eta_betas=%s, default_gammas=%s",
+        "legacy_failure_cleanup=%s, new_sensor_failure_relations=%s, "
+        "default_eta_betas=%s, default_gammas=%s",
         seed.path,
         result.total_rows,
+        legacy_cleanup,
         inserted_relations,
         inserted_eta_betas,
         inserted_gammas,

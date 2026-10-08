@@ -1,4 +1,4 @@
-"""One-shot initialization of Eta, Beta and Gamma for every failure relation."""
+"""Initialize missing Eta, Beta and Gamma histories for failure relations."""
 
 import logging
 
@@ -17,7 +17,7 @@ _LOCK_NAME = "digital_twin_prediction_parameter_seed"
 
 
 def seed_prediction_parameters() -> tuple[int, int]:
-    """Upsert the common initial parameter version in one transaction."""
+    """Insert defaults only for relations without any parameter history."""
 
     with sync_engine.begin() as connection:
         connection.execute(

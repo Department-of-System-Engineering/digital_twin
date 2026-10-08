@@ -7,6 +7,10 @@ from .maintenance.sensor_failure_sync import configure_sensor_failure_type_sync
 from .maintenance.prediction_parameter_defaults import (
     configure_prediction_parameter_defaults,
 )
+from .maintenance.failure_type_reconciliation import (
+    cleanup_legacy_seed_failure_types,
+    configure_cmms_failure_identifiers,
+)
 from .models import Base
 from .seed_data import import_seed_workbook, load_seed_workbook
 from .settings import settings
@@ -208,7 +212,6 @@ EXPECTED_PREDICTION_COLUMNS = {
     },
 }
 
-
 def migrate_legacy_prediction_schema(connection) -> None:
     """Rebuild empty prediction tables created with the obsolete layout.
 
@@ -293,12 +296,20 @@ def main() -> None:
 
         seed = load_seed_workbook(settings.SEED_WORKBOOK_PATH)
         import_result = import_seed_workbook(connection, seed)
+        legacy_cleanup = (
+            cleanup_legacy_seed_failure_types(connection)
+        )
+        configure_cmms_failure_identifiers(connection)
         connection.commit()
 
         log.info(
             "Excel seed import complete: workbook=%s, rows=%s",
             seed.path,
             import_result.total_rows,
+        )
+        log.info(
+            "Legacy dummy failure cleanup complete: %s",
+            legacy_cleanup,
         )
 
         for statement in POST_MODEL_SCHEMA_UPDATES:

@@ -58,7 +58,8 @@ CREATE TABLE public.failure_types (
     failure_type_name TEXT,
     is_preventive BOOLEAN,
     failure_cause_id BIGINT,
-    CONSTRAINT pk_failure_types PRIMARY KEY (failure_type_id)
+    CONSTRAINT pk_failure_types PRIMARY KEY (failure_type_id),
+    CONSTRAINT ux_failure_types_failure_cause_id UNIQUE (failure_cause_id)
 );
 
 ALTER TABLE public.failure_types OWNER TO dt_admin;
@@ -90,6 +91,8 @@ CREATE TABLE public.asset_failure_types (
     severity INTEGER,
     asset_failurecause_id BIGINT,
     CONSTRAINT pk_asset_failure_types PRIMARY KEY (asset_failure_type_id),
+    CONSTRAINT ux_asset_failure_types_asset_failurecause_id
+        UNIQUE (asset_failurecause_id),
     CONSTRAINT fk_asset_failure_types_assets
         FOREIGN KEY (asset_id) REFERENCES public.assets (asset_id),
     CONSTRAINT fk_asset_failure_types_failure_types

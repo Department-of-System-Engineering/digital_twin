@@ -73,9 +73,9 @@ A fő lépések:
 9. A job `done`, `skipped`, `not_found` vagy `error` állapotba kerül.
 
 A predikció eredményét a worker bontja két CMMS-payloadra. Az
-`/dt/asset_prediction` az eszköz külső `asset_id` értékét és az összesített
+`/dt-api/asset_prediction` az eszköz külső `asset_id` értékét és az összesített
 `predicted_reliability` értéket kapja. Az
-`/dt/asset_failure_cause_prediction` hibaoklistájához a worker az egyes
+`/dt-api/asset_failure_cause_prediction` hibaoklistájához a worker az egyes
 `failure_type_id` értékeket a belső `asset_id` segítségével oldja fel
 `asset_failurecause_id` értékekre, és a hozzájuk tartozó valószínűséget
 `predicted_reliability` néven küldi.
@@ -93,9 +93,9 @@ a worker automatikusan újra sorba állítja. Ezt 30 másodpercenként ellenőrz
 A worker az alábbi hívásokat használja:
 
 ```text
-GET  {CMMS_BASE_URL}/dt/asset_failure_causes/{asset_id}
-POST {CMMS_BASE_URL}/dt/asset_prediction
-POST {CMMS_BASE_URL}/dt/asset_failure_cause_prediction
+GET  {CMMS_BASE_URL}/dt-api/asset_failure_causes/{asset_id}
+POST {CMMS_BASE_URL}/dt-api/asset_prediction
+POST {CMMS_BASE_URL}/dt-api/asset_failure_cause_prediction
 ```
 
 Mindegyik kérés fejléce:

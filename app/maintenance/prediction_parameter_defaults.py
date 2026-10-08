@@ -1,4 +1,4 @@
-"""Keep initial prediction parameters complete for every failure relation."""
+"""Create cold-start parameters once for every new failure relation."""
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
@@ -8,12 +8,6 @@ from sqlalchemy.orm import Session
 DatabaseExecutor = Connection | Session
 
 _BACKFILL_STATEMENTS = (
-    """
-    UPDATE public.etas_betas
-    SET eta_value = 10000.0,
-        beta_value = 1.0
-    WHERE learning_time = TIMESTAMP '2026-09-01 00:00:00'
-    """,
     """
     INSERT INTO public.etas_betas
         (eta_value, beta_value, asset_failure_type_id, learning_time)
@@ -27,14 +21,7 @@ _BACKFILL_STATEMENTS = (
         SELECT 1
         FROM public.etas_betas AS parameter
         WHERE parameter.asset_failure_type_id = relation.asset_failure_type_id
-          AND parameter.learning_time = TIMESTAMP '2026-09-01 00:00:00'
     )
-    """,
-    """
-    UPDATE public.gammas
-    SET gamma_value = 1.0,
-        contribution = 0.0
-    WHERE learning_time = TIMESTAMP '2026-09-01 00:00:00'
     """,
     """
     INSERT INTO public.gammas
@@ -49,7 +36,6 @@ _BACKFILL_STATEMENTS = (
         SELECT 1
         FROM public.gammas AS parameter
         WHERE parameter.sensor_failure_type_id = relation.sensor_failure_type_id
-          AND parameter.learning_time = TIMESTAMP '2026-09-01 00:00:00'
     )
     """,
 )
@@ -64,11 +50,15 @@ _TRIGGER_STATEMENTS = (
     BEGIN
         INSERT INTO public.etas_betas
             (eta_value, beta_value, asset_failure_type_id, learning_time)
-        VALUES (
+        SELECT
             10000.0,
             1.0,
             NEW.asset_failure_type_id,
             TIMESTAMP '2026-09-01 00:00:00'
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM public.etas_betas
+            WHERE asset_failure_type_id = NEW.asset_failure_type_id
         );
 
         RETURN NEW;
@@ -93,11 +83,15 @@ _TRIGGER_STATEMENTS = (
     BEGIN
         INSERT INTO public.gammas
             (gamma_value, sensor_failure_type_id, contribution, learning_time)
-        VALUES (
+        SELECT
             1.0,
             NEW.sensor_failure_type_id,
             0.0,
             TIMESTAMP '2026-09-01 00:00:00'
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM public.gammas
+            WHERE sensor_failure_type_id = NEW.sensor_failure_type_id
         );
 
         RETURN NEW;
@@ -120,14 +114,12 @@ _TRIGGER_STATEMENTS = (
 def configure_prediction_parameter_defaults(
     executor: DatabaseExecutor,
 ) -> tuple[int, int]:
-    """Backfill missing defaults and install triggers for future relations."""
+    """Initialize relations without history and install insert-only triggers."""
 
-    executor.execute(text(_BACKFILL_STATEMENTS[0]))
     inserted_eta_betas = executor.execute(
-        text(_BACKFILL_STATEMENTS[1])
+        text(_BACKFILL_STATEMENTS[0])
     )
-    executor.execute(text(_BACKFILL_STATEMENTS[2]))
-    inserted_gammas = executor.execute(text(_BACKFILL_STATEMENTS[3]))
+    inserted_gammas = executor.execute(text(_BACKFILL_STATEMENTS[1]))
 
     for statement in _TRIGGER_STATEMENTS:
         executor.execute(text(statement))

@@ -1,4 +1,3 @@
-from datetime import datetime
 from pathlib import Path
 
 from app.seed_data import import_seed_workbook, load_seed_workbook
@@ -22,13 +21,13 @@ def test_packaged_seed_workbook_is_valid() -> None:
     assert len(seed.rows("Sensors")) == 17
     assert len(seed.rows("ProcessSteps")) == 10
     assert len(seed.rows("Routing")) == 11
-    assert len(seed.rows("FailureTypes")) == 3
-    assert len(seed.rows("AssetFailureTypes")) == 4
-    assert len(seed.rows("SensorFailureTypes")) == 51
+    assert len(seed.rows("FailureTypes")) == 0
+    assert len(seed.rows("AssetFailureTypes")) == 0
+    assert len(seed.rows("SensorFailureTypes")) == 0
     assert len(seed.rows("SensorStatistics")) == 3
     assert len(seed.rows("Measurements")) == 2880
-    assert len(seed.rows("EtaBetas")) == 4
-    assert len(seed.rows("Gammas")) == 51
+    assert len(seed.rows("EtaBetas")) == 0
+    assert len(seed.rows("Gammas")) == 0
     assert len(seed.rows("AssetWorksheetLists")) == 6
     assert len(seed.rows("OperationsDoneLists")) == 22
 
@@ -93,14 +92,14 @@ def test_complete_workbook_can_be_planned_for_import() -> None:
     result = import_seed_workbook(connection, seed)  # type: ignore[arg-type]
 
     sql = "\n".join(statement for statement, _ in connection.statements)
-    assert result.total_rows == 3101
+    assert result.total_rows == 2988
     assert sql.count("INSERT INTO public.asset_process_steps") == 10
     assert sql.count("INSERT INTO public.routing") == 11
-    assert sql.count("INSERT INTO public.sensor_failure_types") == 51
+    assert sql.count("INSERT INTO public.sensor_failure_types") == 0
     assert sql.count("INSERT INTO public.measurements") == 2880
-    assert sql.count("INSERT INTO public.etas_betas") == 4
-    assert sql.count("INSERT INTO public.gammas") == 51
-    assert "UPDATE public.etas_betas" in sql
+    assert sql.count("INSERT INTO public.etas_betas") == 0
+    assert sql.count("INSERT INTO public.gammas") == 0
+    assert "UPDATE public.etas_betas" not in sql
     assert "UPDATE public.gammas" not in sql
     assert sql.count("INSERT INTO public.asset_worksheet_lists") == 6
     assert sql.count("INSERT INTO public.operations_done_lists") == 22
@@ -109,19 +108,21 @@ def test_complete_workbook_can_be_planned_for_import() -> None:
     assert "ALTER COLUMN data_source_id" in sql
 
 
-def test_prediction_parameters_start_with_dummy_values() -> None:
+def test_prediction_parameters_are_created_at_runtime_not_seeded() -> None:
     seed = load_seed_workbook(WORKBOOK_PATH)
 
-    assert {
-        (row["eta_value"], row["beta_value"])
-        for row in seed.rows("EtaBetas")
-    } == {(10000, 1)}
-    assert {row["gamma_value"] for row in seed.rows("Gammas")} == {1}
-    assert {row["contribution"] for row in seed.rows("Gammas")} == {0}
-    expected_learning_time = datetime(2026, 9, 1)
-    assert {
-        row["learning_time"] for row in seed.rows("EtaBetas")
-    } == {expected_learning_time}
-    assert {
-        row["learning_time"] for row in seed.rows("Gammas")
-    } == {expected_learning_time}
+    assert seed.rows("EtaBetas") == []
+    assert seed.rows("Gammas") == []
+
+
+def test_cmms_managed_preparation_failure_types_are_not_seeded() -> None:
+    seed = load_seed_workbook(WORKBOOK_PATH)
+
+    assert all(
+        row["asset_key"] != "preparation"
+        for row in seed.rows("AssetFailureTypes")
+    )
+    assert all(
+        row.get("asset_failure_type_key") != "asset_failure_type_4"
+        for row in seed.rows("AssetWorksheetLists")
+    )

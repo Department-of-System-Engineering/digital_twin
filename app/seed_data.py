@@ -582,7 +582,7 @@ def _validate_seed(seed: SeedWorkbook) -> None:
     failure_type_keys = _keys(seed, "FailureTypes", "failure_type_key")
     for row in seed.rows("FailureTypes"):
         failure_type_id = _integer(
-            "FailureTypes", row, "failure_type_id", required=True
+            "FailureTypes", row, "failure_type_id"
         )
         if failure_type_id is not None and failure_type_id <= 0:
             raise SeedDataError(
@@ -591,7 +591,9 @@ def _validate_seed(seed: SeedWorkbook) -> None:
             )
         _required_text("FailureTypes", row, "failure_type_name")
         _boolean("FailureTypes", row, "is_preventive")
-        failure_cause_id = _integer("FailureTypes", row, "failure_cause_id")
+        failure_cause_id = _integer(
+            "FailureTypes", row, "failure_cause_id", required=True
+        )
         if failure_cause_id is not None and failure_cause_id <= 0:
             raise SeedDataError(
                 f"failure_cause_id must be positive at "
@@ -618,7 +620,7 @@ def _validate_seed(seed: SeedWorkbook) -> None:
     )
     for row in seed.rows("AssetFailureTypes"):
         relation_id = _integer(
-            "AssetFailureTypes", row, "asset_failure_type_id", required=True
+            "AssetFailureTypes", row, "asset_failure_type_id"
         )
         probability = _number(
             "AssetFailureTypes",
@@ -627,7 +629,7 @@ def _validate_seed(seed: SeedWorkbook) -> None:
         )
         severity = _integer("AssetFailureTypes", row, "severity")
         external_id = _integer(
-            "AssetFailureTypes", row, "asset_failurecause_id"
+            "AssetFailureTypes", row, "asset_failurecause_id", required=True
         )
         if relation_id is not None and relation_id <= 0:
             raise SeedDataError(
@@ -1108,19 +1110,16 @@ def import_seed_workbook(connection: Connection, seed: SeedWorkbook) -> SeedImpo
             connection,
             """
             INSERT INTO public.failure_types
-                (failure_type_id, failure_type_name, is_preventive, failure_cause_id)
-            VALUES (:failure_type_id, :failure_type_name, :is_preventive,
-                    :failure_cause_id)
-            ON CONFLICT (failure_type_id) DO UPDATE SET
+                (failure_type_name, is_preventive, failure_cause_id)
+            VALUES (:failure_type_name, :is_preventive, :failure_cause_id)
+            ON CONFLICT (failure_cause_id)
+                WHERE failure_cause_id IS NOT NULL
+            DO UPDATE SET
                 failure_type_name = EXCLUDED.failure_type_name,
-                is_preventive = EXCLUDED.is_preventive,
-                failure_cause_id = EXCLUDED.failure_cause_id
+                is_preventive = EXCLUDED.is_preventive
             RETURNING failure_type_id
             """,
             {
-                "failure_type_id": _integer(
-                    "FailureTypes", row, "failure_type_id", required=True
-                ),
                 "failure_type_name": _required_text(
                     "FailureTypes", row, "failure_type_name"
                 ),
@@ -1128,7 +1127,7 @@ def import_seed_workbook(connection: Connection, seed: SeedWorkbook) -> SeedImpo
                     "FailureTypes", row, "is_preventive"
                 ),
                 "failure_cause_id": _integer(
-                    "FailureTypes", row, "failure_cause_id"
+                    "FailureTypes", row, "failure_cause_id", required=True
                 ),
             },
         )
@@ -1142,11 +1141,13 @@ def import_seed_workbook(connection: Connection, seed: SeedWorkbook) -> SeedImpo
             connection,
             """
             INSERT INTO public.asset_failure_types
-                (asset_failure_type_id, asset_id, failure_type_id,
+                (asset_id, failure_type_id,
                  default_occurrence_probability, severity, asset_failurecause_id)
-            VALUES (:asset_failure_type_id, :asset_id, :failure_type_id,
+            VALUES (:asset_id, :failure_type_id,
                     :probability, :severity, :asset_failurecause_id)
-            ON CONFLICT (asset_failure_type_id) DO UPDATE SET
+            ON CONFLICT (asset_failurecause_id)
+                WHERE asset_failurecause_id IS NOT NULL
+            DO UPDATE SET
                 asset_id = EXCLUDED.asset_id,
                 failure_type_id = EXCLUDED.failure_type_id,
                 default_occurrence_probability =
@@ -1156,12 +1157,6 @@ def import_seed_workbook(connection: Connection, seed: SeedWorkbook) -> SeedImpo
             RETURNING asset_failure_type_id
             """,
             {
-                "asset_failure_type_id": _integer(
-                    "AssetFailureTypes",
-                    row,
-                    "asset_failure_type_id",
-                    required=True,
-                ),
                 "asset_id": asset_ids[
                     _required_text("AssetFailureTypes", row, "asset_key")
                 ],
@@ -1177,7 +1172,7 @@ def import_seed_workbook(connection: Connection, seed: SeedWorkbook) -> SeedImpo
                 ),
                 "severity": _integer("AssetFailureTypes", row, "severity"),
                 "asset_failurecause_id": _integer(
-                    "AssetFailureTypes", row, "asset_failurecause_id"
+                    "AssetFailureTypes", row, "asset_failurecause_id", required=True
                 ),
             },
         )
@@ -1277,18 +1272,13 @@ def import_seed_workbook(connection: Connection, seed: SeedWorkbook) -> SeedImpo
 
     eta_beta_upsert = text(
         """
-        WITH updated AS (
-            UPDATE public.etas_betas
-            SET eta_value = :eta_value,
-                beta_value = :beta_value
-            WHERE asset_failure_type_id = :asset_failure_type_id
-              AND learning_time = :learning_time
-            RETURNING eta_beta_id
-        )
         INSERT INTO public.etas_betas
             (eta_value, beta_value, asset_failure_type_id, learning_time)
         SELECT :eta_value, :beta_value, :asset_failure_type_id, :learning_time
-        WHERE NOT EXISTS (SELECT 1 FROM updated)
+        WHERE NOT EXISTS (
+            SELECT 1 FROM public.etas_betas
+            WHERE asset_failure_type_id = :asset_failure_type_id
+        )
         """
     )
     for row in seed.rows("EtaBetas"):
@@ -1318,7 +1308,6 @@ def import_seed_workbook(connection: Connection, seed: SeedWorkbook) -> SeedImpo
         WHERE NOT EXISTS (
             SELECT 1 FROM public.gammas
             WHERE sensor_failure_type_id = :sensor_failure_type_id
-              AND learning_time = :learning_time
         )
         """
     )

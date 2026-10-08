@@ -4,11 +4,19 @@ from dataclasses import dataclass
 from datetime import datetime
 from collections import Counter
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from .cmms import (cmms_get_asset_failure_causes)
-from ..models import (Asset, AssetFailureType, AssetWorksheetList, FailureType, OperationsDoneList)
+from ..models import (
+    Asset,
+    AssetFailureType,
+    AssetWorksheetList,
+    EtaBeta,
+    FailureType,
+    OperationsDoneList,
+    PredictionAssetFailureTypeLevel,
+)
 from .schemas import AssetPredictIn
 
 
@@ -237,7 +245,7 @@ def ensure_failure_type(
     rekordot.
 
     Leképezés:
-        failure_types.failure_type_id = CMMS failure_cause_id
+        failure_types.failure_type_id = database-generated local ID
 
         failure_types.failure_cause_id = CMMS failure_cause_id
     """
@@ -252,7 +260,7 @@ def ensure_failure_type(
             "failure_cause_id is missing"
         )
 
-    failure_type_id = normalize_positive_int(
+    failure_cause_id = normalize_positive_int(
         failure_cause.get(
             "failure_cause_id"
         ),
@@ -269,22 +277,20 @@ def ensure_failure_type(
         else None
     )
 
-    failure_type = session.get(
-        FailureType,
-        failure_type_id,
+    failure_type = session.scalar(
+        select(FailureType).where(
+            FailureType.failure_cause_id == failure_cause_id
+        )
     )
 
     if failure_type is None:
         failure_type = FailureType(
-            failure_type_id=(
-                failure_type_id
-            ),
             failure_type_name=(
                 failure_type_name
             ),
             is_preventive=None,
             failure_cause_id=(
-                failure_type_id
+                failure_cause_id
             ),
         )
 
@@ -294,7 +300,7 @@ def ensure_failure_type(
 
     else:
         failure_type.failure_cause_id = (
-            failure_type_id
+            failure_cause_id
         )
 
         if failure_type_name is not None:
@@ -304,7 +310,7 @@ def ensure_failure_type(
 
     session.flush()
 
-    return failure_type_id
+    return int(failure_type.failure_type_id)
 
 
 def ensure_asset_failure_type(
@@ -323,13 +329,13 @@ def ensure_asset_failure_type(
             = belső assets.asset_id
 
         asset_failure_types.failure_type_id
-            = CMMS failure_cause_id
+            = local failure_types.failure_type_id
 
         asset_failure_types.asset_failurecause_id
             = CMMS asset_failurecause_id
 
         asset_failure_types.asset_failure_type_id
-            = CMMS asset_failurecause_id
+            = database-generated local ID
     """
 
     if (
@@ -349,20 +355,15 @@ def ensure_asset_failure_type(
         "asset_failurecause_id",
     )
 
-    asset_failure_type_id = (
-        asset_failurecause_id
-    )
-
-    asset_failure_type = session.get(
-        AssetFailureType,
-        asset_failure_type_id,
+    asset_failure_type = session.scalar(
+        select(AssetFailureType).where(
+            AssetFailureType.asset_failurecause_id
+            == asset_failurecause_id
+        )
     )
 
     if asset_failure_type is None:
         asset_failure_type = AssetFailureType(
-            asset_failure_type_id=(
-                asset_failure_type_id
-            ),
             asset_id=int(
                 asset_id
             ),
@@ -440,7 +441,105 @@ def ensure_asset_failure_type(
 
     session.flush()
 
-    return asset_failure_type_id
+    return int(asset_failure_type.asset_failure_type_id)
+
+
+def reconcile_asset_failure_types(
+    session: Session,
+    asset_id: int,
+    current_asset_failure_type_ids: set[int],
+) -> list[int]:
+    """Remove CMMS relations that are no longer current and safe to delete.
+
+    Prediction and worksheet references are historical data. They are never
+    removed implicitly; synchronization stops with a precise error so an
+    operator can decide how that history should be retained.
+    """
+
+    stale_query = select(
+        AssetFailureType.asset_failure_type_id
+    ).where(
+        AssetFailureType.asset_id == int(asset_id)
+    )
+
+    if current_asset_failure_type_ids:
+        stale_query = stale_query.where(
+            AssetFailureType.asset_failure_type_id.not_in(
+                sorted(current_asset_failure_type_ids)
+            )
+        )
+
+    stale_ids = sorted(
+        int(value)
+        for value in session.execute(stale_query).scalars().all()
+    )
+
+    if not stale_ids:
+        return []
+
+    prediction_references = set(
+        int(value)
+        for value in session.execute(
+            select(
+                PredictionAssetFailureTypeLevel.asset_failure_type_id
+            )
+            .where(
+                PredictionAssetFailureTypeLevel.asset_failure_type_id.in_(
+                    stale_ids
+                )
+            )
+            .distinct()
+        ).scalars().all()
+    )
+    worksheet_references = set(
+        int(value)
+        for value in session.execute(
+            select(
+                AssetWorksheetList.asset_failure_type_id
+            )
+            .where(
+                AssetWorksheetList.asset_failure_type_id.in_(stale_ids)
+            )
+            .distinct()
+        ).scalars().all()
+        if value is not None
+    )
+
+    referenced_ids = prediction_references | worksheet_references
+    if referenced_ids:
+        reference_details: list[str] = []
+        if prediction_references:
+            reference_details.append(
+                "prediction_asset_failure_type_levels="
+                f"{sorted(prediction_references)}"
+            )
+        if worksheet_references:
+            reference_details.append(
+                "asset_worksheet_lists="
+                f"{sorted(worksheet_references)}"
+            )
+
+        raise DataSyncValidationError(
+            "CMMS synchronization found stale asset_failure_types rows "
+            f"for asset_id={asset_id}: {stale_ids}. Historical references "
+            "prevent automatic removal: "
+            + ", ".join(reference_details)
+        )
+
+    session.execute(
+        delete(EtaBeta).where(
+            EtaBeta.asset_failure_type_id.in_(stale_ids)
+        )
+    )
+    session.execute(
+        delete(AssetFailureType).where(
+            AssetFailureType.asset_id == int(asset_id),
+            AssetFailureType.asset_failure_type_id.in_(stale_ids),
+        )
+    )
+    session.flush()
+
+    return stale_ids
 
 
 def synchronize_failure_causes(
@@ -456,15 +555,11 @@ def synchronize_failure_causes(
     Visszatérési érték:
 
         {
-            failure_type_id: asset_failure_type_id
+            CMMS failure_cause_id: local asset_failure_type_id
         }
 
-    Mivel:
-
-        failure_type_id = failure_cause_id
-
-        asset_failure_type_id
-            = asset_failurecause_id
+    The returned keys are CMMS failure-cause IDs because the incoming
+    workorder uses that namespace. Values are local asset/failure relation IDs.
     """
 
     failure_causes = get_failure_causes(
@@ -474,19 +569,22 @@ def synchronize_failure_causes(
     failure_type_mapping: dict[int, int] = {}
 
     for failure_cause in failure_causes:
+        cmms_failure_cause_id = normalize_positive_int(
+            failure_cause.get("failure_cause_id"),
+            "failure_cause_id",
+        )
         failure_type_id = ensure_failure_type(
             session=session,
             failure_cause=failure_cause,
         )
 
         if (
-            failure_type_id
+            cmms_failure_cause_id
             in failure_type_mapping
         ):
             raise DataSyncValidationError(
-                "Duplicate failure_cause_id in "
-                "the CMMS response: "
-                f"{failure_type_id}"
+                "Duplicate failure_cause_id in the CMMS response: "
+                f"{cmms_failure_cause_id}"
             )
 
         asset_failure_type_id = (
@@ -501,8 +599,16 @@ def synchronize_failure_causes(
         )
 
         failure_type_mapping[
-            failure_type_id
+            cmms_failure_cause_id
         ] = asset_failure_type_id
+
+    reconcile_asset_failure_types(
+        session=session,
+        asset_id=asset_id,
+        current_asset_failure_type_ids=set(
+            failure_type_mapping.values()
+        ),
+    )
 
     return failure_type_mapping
 

@@ -22,7 +22,7 @@
     }
   ],
   "paths": {
-    "/dt/asset_failure_causes/{asset_id}": {
+    "/dt-api/asset_failure_causes/{asset_id}": {
       "get": {
         "summary": "Egy eszköz hibaokainak lekérése",
         "operationId": "cmms_get_asset_failure_causes",
@@ -80,7 +80,7 @@
                               "null"
                             ],
                             "minimum": 0,
-                            "maximum": 1
+                            "maximum": 99
                           },
                           "severity": {
                             "type": [
@@ -108,7 +108,7 @@
         }
       }
     },
-    "/dt/asset_prediction": {
+    "/dt-api/asset_prediction": {
       "post": {
         "summary": "Eszközszintű predikció visszaküldése",
         "operationId": "cmms_post_asset_prediction",
@@ -150,7 +150,7 @@
         }
       }
     },
-    "/dt/asset_failure_cause_prediction": {
+    "/dt-api/asset_failure_cause_prediction": {
       "post": {
         "summary": "Hibaokszintű predikciók visszaküldése",
         "operationId": "cmms_post_asset_failure_cause_prediction",

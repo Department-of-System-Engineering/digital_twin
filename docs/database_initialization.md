@@ -27,18 +27,23 @@ Docker Compose enforces this through the `db-init` dependency.
    for every configuration present in it.
 7. Missing sensor/failure-type combinations are generated and database
    triggers are installed for later additions.
+8. Initial Eta/Beta and Gamma rows are inserted only for relations that have
+   no parameter history yet. Existing values are never reset by startup.
 
-The workbook also contains the prediction module's initial input data:
+The workbook contains the prediction module's non-CMMS initial input data:
 
-- failure types and asset/failure-type relations;
-- the complete sensor/failure-type relation matrix;
 - initial sensor statistics and measurement history;
-- initial eta value of `10000`, and beta and gamma values of `1`, for every
-  failure relation, using `2026-09-01 00:00:00` as the common initial
-  `learning_time`;
 - maintenance worksheet and completed-operation history;
-- dummy Eta/Beta and Gamma parameters that the prediction module can replace
-  or extend with learned values during normal operation.
+- asset and sensor topology, including the external CMMS/DC asset mapping.
+
+Failure types and asset/failure-type relations are CMMS-owned and are not
+seeded. `failure_type_id` and `asset_failure_type_id` are local identity
+columns. The CMMS identifiers are stored separately as `failure_cause_id` and
+`asset_failurecause_id`. Every local failure type is linked to every sensor.
+When a relation is first created, the database adds `eta=10000`, `beta=1` or
+`gamma=1`, `contribution=0` with `learning_time=2026-09-01 00:00:00`. Later
+startup and seed-update runs only fill missing parameter histories; they never
+overwrite values maintained by the prediction module.
 
 `predictions`, `prediction_asset_levels`, and
 `prediction_asset_failure_type_levels` are runtime output tables. They are not
@@ -74,14 +79,16 @@ services do not start.
   standard deviation (`STDDEV_SAMP`). The seed contains one statistics row per
   sensor with measurements, using a past `learning_time`; the prediction module
   reads the row having the latest learning time.
-- Keep the initial Eta/Beta values positive. Gamma and contribution values may
-  be zero. The packaged workbook uses `eta=1`, `beta=1`, `gamma=1`, and
-  `contribution=0` as explicit dummy values.
-- Eta/Beta and Gamma seed rows are inserted only when their relation/timestamp
-  pair is missing, so a later startup does not reset values learned at runtime.
+- Keep the failure-related worksheets empty. Runtime CMMS synchronization and
+  database triggers own FailureTypes, AssetFailureTypes, SensorFailureTypes,
+  EtaBetas and Gammas.
 
-The importer updates or creates master data, but does not delete master rows.
-For configurations present in the workbook, it does replace routing and
+The importer generally updates or creates master data rather than deleting it.
+It has one idempotent compatibility cleanup for the former dummy failure types
+1, 2 and 3. The cleanup removes their asset and sensor relations, parameters,
+worksheet links and invalid per-failure prediction details while retaining
+prediction headers and asset-level history. For configurations
+present in the workbook, the importer also replaces routing and
 asset/process-step relation rows so removed or changed edges do not remain
 active accidentally.
 
