@@ -75,10 +75,11 @@ A fő lépések:
 A predikció eredményét a worker bontja két CMMS-payloadra. Az
 `/dt-api/asset_prediction` az eszköz külső `asset_id` értékét és az összesített
 `predicted_reliability` értéket kapja. Az
-`/dt-api/asset_failure_cause_prediction` hibaoklistájához a worker az egyes
-`failure_type_id` értékeket a belső `asset_id` segítségével oldja fel
-`asset_failurecause_id` értékekre, és a hozzájuk tartozó valószínűséget
-`predicted_reliability` néven küldi.
+`/dt-api/asset_failure_cause_prediction` hibaoklistájához a worker a predikciós
+modul örökölt `failure_type_ids` mezőjében kapott belső
+`asset_failure_type_id` értékeket oldja fel CMMS `asset_failurecause_id`
+értékekre, és a hozzájuk tartozó valószínűséget `predicted_reliability` néven
+küldi.
 
 A CMMS a `default_occurrence_probability` értékét 0 és 99 közötti
 százalékos skálán adja át. A szinkronizálás ezt 100-zal osztja, és az

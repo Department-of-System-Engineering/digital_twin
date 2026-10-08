@@ -71,7 +71,9 @@ def validate_prediction_result(prediction_result: object) -> tuple[int, list[int
     """
     Ellenőrzi a predikciós modul kimenetét.
 
-    Elvárt kimenet:
+    Elvárt kimenet. A predikciós modul örökölt ``failure_type_ids`` mezője
+    valójában az ``asset_failure_types.asset_failure_type_id`` értékeket adja
+    vissza:
 
         {
             "prediction_id": 1,
@@ -173,56 +175,76 @@ def build_failure_cause_items(asset_failurecause_ids: list[int], failure_type_pr
             for (asset_failurecause_id, probability) in zip(asset_failurecause_ids, failure_type_probabilities)]
 
 
-def resolve_asset_failurecause_ids(session: Session, asset_id: int, failure_type_ids: list[int]) -> list[int]:
+def resolve_asset_failurecause_ids(
+    session: Session,
+    asset_id: int,
+    asset_failure_type_ids: list[int],
+) -> list[int]:
     """
-    A predikcióból kapott failure_type_id értékeket
-    az adott belső asset_id alapján feloldja a CMMS
-    asset_failurecause_id értékekre.
+    A predikcióból kapott belső asset_failure_type_id értékeket az adott
+    assethez tartozó CMMS asset_failurecause_id értékekre oldja fel.
 
     A visszatérési lista sorrendje megegyezik a
-    failure_type_ids lista sorrendjével.
+    asset_failure_type_ids lista sorrendjével.
     """
 
-    if not failure_type_ids:
-        raise ValueError("failure_type_ids cannot be empty")
+    if not asset_failure_type_ids:
+        raise ValueError("asset_failure_type_ids cannot be empty")
 
     rows = session.execute(
         select(
-            AssetFailureType.failure_type_id,
+            AssetFailureType.asset_failure_type_id,
             AssetFailureType.asset_failurecause_id,
         ).where(
             AssetFailureType.asset_id == int(asset_id),
-
-            AssetFailureType.failure_type_id.in_(
-                failure_type_ids
+            AssetFailureType.asset_failure_type_id.in_(
+                asset_failure_type_ids
             ),
         )
     ).all()
 
-    failure_type_mapping: dict[int, int] = {}
+    asset_failure_type_mapping: dict[int, int] = {}
 
-    for (failure_type_id, asset_failurecause_id) in rows:
-        if failure_type_id is None:
-            continue
-
-        normalized_failure_type_id = int(failure_type_id)
+    for (asset_failure_type_id, asset_failurecause_id) in rows:
+        normalized_asset_failure_type_id = int(asset_failure_type_id)
 
         if asset_failurecause_id is None:
-            raise ValueError("asset_failurecause_id is NULL for " f"asset_id={asset_id}, " "failure_type_id=" f"{normalized_failure_type_id}")
+            raise ValueError(
+                "asset_failurecause_id is NULL for "
+                f"asset_id={asset_id}, asset_failure_type_id="
+                f"{normalized_asset_failure_type_id}"
+            )
 
         normalized_asset_failurecause_id = int(asset_failurecause_id)
 
-        if (normalized_failure_type_id in failure_type_mapping):
-            raise ValueError("Multiple asset_failure_types rows were found for " f"asset_id={asset_id}, " "failure_type_id=" f"{normalized_failure_type_id}")
+        if normalized_asset_failure_type_id in asset_failure_type_mapping:
+            raise ValueError(
+                "Multiple asset_failure_types rows were found for "
+                f"asset_id={asset_id}, asset_failure_type_id="
+                f"{normalized_asset_failure_type_id}"
+            )
 
-        failure_type_mapping[normalized_failure_type_id] = normalized_asset_failurecause_id
+        asset_failure_type_mapping[normalized_asset_failure_type_id] = (
+            normalized_asset_failurecause_id
+        )
 
-    missing_failure_type_ids = [failure_type_id for failure_type_id in failure_type_ids if failure_type_id not in failure_type_mapping]
+    missing_asset_failure_type_ids = [
+        asset_failure_type_id
+        for asset_failure_type_id in asset_failure_type_ids
+        if asset_failure_type_id not in asset_failure_type_mapping
+    ]
 
-    if missing_failure_type_ids:
-        raise ValueError("No asset_failurecause_id was found " f"for asset_id={asset_id} and " "failure_type_ids=" f"{missing_failure_type_ids}")
+    if missing_asset_failure_type_ids:
+        raise ValueError(
+            "No asset_failurecause_id was found "
+            f"for asset_id={asset_id} and asset_failure_type_ids="
+            f"{missing_asset_failure_type_ids}"
+        )
 
-    return [failure_type_mapping[failure_type_id] for failure_type_id in failure_type_ids]
+    return [
+        asset_failure_type_mapping[asset_failure_type_id]
+        for asset_failure_type_id in asset_failure_type_ids
+    ]
 
 
 def process_job(session: Session, job: PredictionJob) -> None:
@@ -306,9 +328,13 @@ def process_job(session: Session, job: PredictionJob) -> None:
         prediction_result = run_prediction(asset_id=sync_result.asset_id, job_id=job_id, operation_template_dict=sync_result.asset_failure_cause_operations, failure_start_time=workorder.failure_date,
                                           maintenance_end_time=workorder.ended, delta_horizon=prediction_config.delta_horizon, delta_sampling=prediction_config.delta_sampling, session=session)
 
-        (prediction_id, failure_type_ids, failure_type_probabilities, predicted_reliability) = validate_prediction_result(prediction_result=prediction_result)
+        (prediction_id, asset_failure_type_ids, failure_type_probabilities, predicted_reliability) = validate_prediction_result(prediction_result=prediction_result)
 
-        asset_failurecause_ids = (resolve_asset_failurecause_ids(session=session, asset_id=sync_result.asset_id, failure_type_ids=failure_type_ids))
+        asset_failurecause_ids = resolve_asset_failurecause_ids(
+            session=session,
+            asset_id=sync_result.asset_id,
+            asset_failure_type_ids=asset_failure_type_ids,
+        )
 
         # A worker nem ír a predictions táblába.
         # Csak ellenőrzi, hogy a predikciós modul
